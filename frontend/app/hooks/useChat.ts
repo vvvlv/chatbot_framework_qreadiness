@@ -1,0 +1,191 @@
+/**
+ * Custom hook for handling chat with SSE event streaming.
+ * 
+ * Implements the UI state machine from app_definition.md Section 13.
+ */
+'use client';
+
+import { useState, useCallback, useRef } from 'react';
+import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent } from '../types';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export function useChat(sessionId: string) {
+  const [uiState, setUIState] = useState<UIState>("idle");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [toolMeta, setToolMeta] = useState<ToolMeta | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<QuestionEvent | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [currentResponse, setCurrentResponse] = useState<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const responseBufferRef = useRef<string>("");
+
+  const handleEvent = useCallback((event: SSEEvent) => {
+    switch (event.type) {
+      case "session_state":
+        if (event.meta.resumable) {
+          setUIState("awaiting_input");
+        } else if (!event.meta.active_tool) {
+          setUIState("idle");
+        }
+        break;
+
+      case "text_delta":
+        setUIState("streaming");
+        responseBufferRef.current = responseBufferRef.current + event.payload.token;
+        setCurrentResponse(responseBufferRef.current);
+        break;
+
+      case "text_done":
+        if (responseBufferRef.current || event.payload.full_text) {
+          const fullText = event.payload.full_text || responseBufferRef.current;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "assistant",
+              content: fullText,
+              timestamp: new Date(),
+            },
+          ]);
+          responseBufferRef.current = "";
+          setCurrentResponse("");
+        }
+        setUIState("idle");
+        break;
+
+      case "tool_start":
+        setUIState("tool_active");
+        setToolMeta({
+          name: event.meta.active_tool || "unknown",
+          total: event.meta.tool_total || 0,
+          step: 0,
+        });
+        break;
+
+      case "tool_question":
+        setUIState("awaiting_input");
+        setCurrentQuestion({
+          text: event.payload.text,
+          step: event.meta.tool_step || 0,
+          input_type: event.payload.input_type || "free_text",
+          options: event.payload.options,
+          min: event.payload.min,
+          max: event.payload.max,
+        });
+        setToolMeta((prev) => prev ? { ...prev, step: event.meta.tool_step || 0 } : prev);
+        break;
+
+      case "tool_progress":
+        setToolMeta((prev) => prev ? { ...prev, step: event.payload.step } : prev);
+        break;
+
+      case "tool_complete":
+        setUIState("idle");
+        setToolMeta(null);
+        setCurrentQuestion(null);
+        break;
+
+      case "error":
+        setUIState("error");
+        setError(event.payload.message || "An error occurred");
+        break;
+
+      default:
+        console.log("Unknown event type:", event.type);
+    }
+  }, []);
+
+  const send = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+
+    // Add user message
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: text,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setError(null);
+    responseBufferRef.current = "";
+    setCurrentResponse("");
+
+    // Create abort controller for cancellation
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`${API_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text,
+          session_id: sessionId,
+        }),
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("No response body");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          
+          try {
+            const event: SSEEvent = JSON.parse(line.slice(6));
+            handleEvent(event);
+          } catch (e) {
+            console.error("Error parsing SSE event:", e, line);
+          }
+        }
+      }
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.log("Request aborted");
+      } else {
+        setError(error.message || "Failed to send message");
+        setUIState("error");
+      }
+    } finally {
+      abortControllerRef.current = null;
+    }
+  }, [sessionId, handleEvent]);
+
+  const cancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    // Send /cancel command
+    send("/cancel");
+  }, [send]);
+
+  return {
+    uiState,
+    messages,
+    toolMeta,
+    currentQuestion,
+    error,
+    currentResponse,
+    send,
+    cancel,
+  };
+}
