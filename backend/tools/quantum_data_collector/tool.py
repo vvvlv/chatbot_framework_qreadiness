@@ -14,6 +14,7 @@ that remains compatible with the current analyzer/presenter pipeline.
 """
 
 import json
+import uuid
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -44,7 +45,11 @@ class QuantumDataCollectorState(ToolState, total=False):
     field_status: Dict[str, str]  # key -> "filled" | "skipped"
     current_field_key: Optional[str]
     pending_question: Optional[str]  # current question to ask for current_field_key
+    pending_prompt_id: Optional[str]
+    awaiting_answer: bool
+    consumed_prompt_ids: List[str]
     retry_count: int
+    last_validation_reason: Optional[str]
 
     # Audit
     questions_asked: List[Dict[str, Any]]
@@ -125,24 +130,11 @@ class QuantumDataCollectorTool(ToolProtocol):
                     return s
             raise KeyError(key)
 
-        def _is_skip(text: str) -> bool:
+        def _normalized_command(text: str) -> Optional[str]:
             v = (text or "").strip().lower()
-            return v in {"/skip", "skip", "skip this", "no response"}
-
-        def _looks_like_clarification_request(text: str) -> bool:
-            v = (text or "").strip().lower()
-            markers = (
-                "/clarify",
-                "clarify",
-                "what do you mean",
-                "can you explain",
-                "explain the question",
-                "i don't understand",
-                "i dont understand",
-                "what counts as",
-                "what should i answer",
-            )
-            return any(m in v for m in markers)
+            if v in {"/skip", "/clarify", "/cancel"}:
+                return v
+            return None
 
         async def _evaluate_and_rewrite(
             *,
@@ -156,6 +148,7 @@ class QuantumDataCollectorTool(ToolProtocol):
               ok: bool
               rewritten: str | null
               follow_up_question: str | null
+              missing_bits: string[]
               reason: str | null
             """
             extra_rules = ""
@@ -186,6 +179,7 @@ Output STRICT JSON with this schema:
   "ok": true|false,
   "rewritten": "string or null",
   "follow_up_question": "string or null",
+  "missing_bits": ["string", "..."],
   "reason": "string or null"
 }}
 
@@ -208,6 +202,7 @@ Rules:
                     "ok": bool(data.get("ok")),
                     "rewritten": (data.get("rewritten") or None),
                     "follow_up_question": (data.get("follow_up_question") or None),
+                    "missing_bits": data.get("missing_bits") or [],
                     "reason": (data.get("reason") or None),
                 }
             except Exception:
@@ -216,6 +211,7 @@ Rules:
                     "ok": False,
                     "rewritten": None,
                     "follow_up_question": f"Could you provide a bit more detail? {field['default_question']}",
+                    "missing_bits": ["Missing required details."],
                     "reason": "Could not parse validator output.",
                 }
 
@@ -298,7 +294,11 @@ Rules:
             state.setdefault("field_status", {})
             state.setdefault("current_field_key", None)
             state.setdefault("pending_question", None)
+            state.setdefault("pending_prompt_id", None)
+            state.setdefault("awaiting_answer", False)
+            state.setdefault("consumed_prompt_ids", [])
             state.setdefault("retry_count", 0)
+            state.setdefault("last_validation_reason", None)
             state.setdefault("questions_asked", [])
             state.setdefault("answers_received", [])
             state.setdefault("is_complete", False)
@@ -339,8 +339,11 @@ Rules:
                     "quantum_opportunity_dimensions": {},
                     "fields": collected,
                 }
-                state["tool_status"] = "done"
-                state["tool_output"] = {"step_data": state["step_data"], "is_complete": True}
+                state["tool_result"] = {
+                    "step_data": state["step_data"],
+                    "is_complete": True,
+                    "error": None,
+                }
                 state["is_complete"] = True
                 await adispatch_custom_event(
                     "tool_complete",
@@ -360,36 +363,79 @@ Rules:
                 )
             step_num = list(s["key"] for s in self.FIELD_SPECS).index(field_key) + 1
             state["step"] = step_num
+            prompt_id = state.get("pending_prompt_id") or str(uuid.uuid4())
+            state["pending_prompt_id"] = prompt_id
 
-            # Ask and suspend.
-            await adispatch_custom_event(
-                "tool_question",
-                {"text": question, "step": step_num, "input_type": "free_text", "can_skip": True},
+            if not state.get("awaiting_answer"):
+                state["questions_asked"].append(
+                    {
+                        "field_key": field_key,
+                        "question": question,
+                        "step": step_num,
+                        "retry": state.get("retry_count", 0),
+                        "prompt_id": prompt_id,
+                    }
+                )
+                state["awaiting_answer"] = True
+            answer = interrupt(
+                {
+                    "text": question,
+                    "prompt_id": prompt_id,
+                    "step": step_num,
+                    "input_type": "free_text",
+                    "can_skip": True,
+                }
             )
-            state["questions_asked"].append(
-                {"field_key": field_key, "question": question, "step": step_num, "retry": state.get("retry_count", 0)}
-            )
-            answer = interrupt(question)
+            state["awaiting_answer"] = False
 
-            raw_answer = (answer or "").strip()
+            resume_prompt_id = None
+            if isinstance(answer, dict):
+                raw_answer = str(answer.get("text", "")).strip()
+                resume_prompt_id = answer.get("prompt_id")
+            else:
+                raw_answer = str(answer or "").strip()
             state["answers_received"].append(
-                {"field_key": field_key, "question": question, "raw_answer": raw_answer, "step": step_num}
+                {
+                    "field_key": field_key,
+                    "question": question,
+                    "raw_answer": raw_answer,
+                    "step": step_num,
+                    "prompt_id": resume_prompt_id,
+                }
             )
+            if resume_prompt_id and resume_prompt_id != prompt_id:
+                state["pending_question"] = question
+                state["last_validation_reason"] = "Stale prompt answer received."
+                return state
+            if prompt_id in state["consumed_prompt_ids"]:
+                state["pending_question"] = question
+                state["last_validation_reason"] = "Duplicate prompt answer ignored."
+                return state
+            state["consumed_prompt_ids"].append(prompt_id)
 
             # Skip
-            if _is_skip(raw_answer):
+            command = _normalized_command(raw_answer)
+            if command == "/cancel":
+                state["error"] = "Tool cancelled by user."
+                state["is_complete"] = True
+                state["pending_prompt_id"] = None
+                state["tool_result"] = {"step_data": state.get("step_data", {}), "is_complete": True, "error": state["error"]}
+                return state
+            if command == "/skip":
                 state["field_values"][field_key] = None
                 state["field_raw_values"][field_key] = raw_answer
                 state["field_status"][field_key] = "skipped"
                 state["pending_question"] = None
+                state["pending_prompt_id"] = None
                 state["retry_count"] = 0
                 state["current_field_key"] = None
                 await adispatch_custom_event("tool_progress", {"step": step_num, "total": total_steps})
                 return state
 
             # Clarification request -> generate clarification message and re-ask.
-            if _looks_like_clarification_request(raw_answer):
+            if command == "/clarify":
                 state["pending_question"] = await _build_clarification_message(field)
+                state["pending_prompt_id"] = None
                 state["retry_count"] = min(state.get("retry_count", 0) + 1, max_retries_per_field)
                 return state
 
@@ -401,26 +447,31 @@ Rules:
                 state["field_raw_values"][field_key] = raw_answer
                 state["field_status"][field_key] = "filled"
                 state["pending_question"] = None
+                state["pending_prompt_id"] = None
                 state["retry_count"] = 0
                 state["current_field_key"] = None
+                state["last_validation_reason"] = None
                 await adispatch_custom_event("tool_progress", {"step": step_num, "total": total_steps})
                 return state
 
             # Not ok -> follow-up loop
             state["retry_count"] = state.get("retry_count", 0) + 1
             follow_up = judged.get("follow_up_question") or f"Could you provide more detail? {field['default_question']}"
+            state["last_validation_reason"] = judged.get("reason") or "Missing required details."
             if state["retry_count"] >= max_retries_per_field:
                 # Escape hatch: accept a low-confidence fill.
                 state["field_values"][field_key] = raw_answer or "No response"
                 state["field_raw_values"][field_key] = raw_answer
                 state["field_status"][field_key] = "filled"
                 state["pending_question"] = None
+                state["pending_prompt_id"] = None
                 state["retry_count"] = 0
                 state["current_field_key"] = None
                 await adispatch_custom_event("tool_progress", {"step": step_num, "total": total_steps})
                 return state
 
             state["pending_question"] = str(follow_up).strip()
+            state["pending_prompt_id"] = None
             return state
 
         def _continue_or_end(s: QuantumDataCollectorState) -> str:

@@ -67,13 +67,18 @@ export function useChat(sessionId: string) {
         setUIState("awaiting_input");
         setCurrentQuestion({
           text: event.payload.text,
-          step: event.meta.tool_step || 0,
+          step: event.payload.step || event.meta.tool_step || 0,
+          prompt_id: event.payload.prompt_id || event.meta.pending_prompt_id || undefined,
           input_type: event.payload.input_type || "free_text",
           options: event.payload.options,
           min: event.payload.min,
           max: event.payload.max,
         });
-        setToolMeta((prev) => prev ? { ...prev, step: event.meta.tool_step || 0 } : prev);
+        setToolMeta((prev) => prev ? { ...prev, step: event.payload.step || event.meta.tool_step || 0 } : prev);
+        break;
+
+      case "tool_waiting_input":
+        setUIState("awaiting_input");
         break;
 
       case "tool_progress":
@@ -96,7 +101,7 @@ export function useChat(sessionId: string) {
     }
   }, []);
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, promptId?: string) => {
     if (!text.trim()) return;
 
     // Add user message
@@ -123,6 +128,7 @@ export function useChat(sessionId: string) {
         body: JSON.stringify({
           message: text,
           session_id: sessionId,
+          prompt_id: promptId,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -175,8 +181,8 @@ export function useChat(sessionId: string) {
       abortControllerRef.current.abort();
     }
     // Send /cancel command
-    send("/cancel");
-  }, [send]);
+    send("/cancel", currentQuestion?.prompt_id);
+  }, [send, currentQuestion]);
 
   return {
     uiState,

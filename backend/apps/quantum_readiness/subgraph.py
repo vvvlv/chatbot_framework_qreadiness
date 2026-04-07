@@ -58,29 +58,59 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
         g = StateGraph(SubgraphState)
         
         # Add tool nodes
+        g.add_node("before_collector", self._before_collector)
         g.add_node("collector", self._collector.build())
+        g.add_node("after_collector", self._after_collector_adapter)
         g.add_node("collector_to_analyzer", self._collector_to_analyzer)
+        g.add_node("before_analyzer", self._before_analyzer)
         g.add_node("analyzer", self._analyzer.build())
+        g.add_node("after_analyzer", self._after_analyzer_adapter)
         g.add_node("analyzer_to_presenter", self._analyzer_to_presenter)
+        g.add_node("before_presenter", self._before_presenter)
         g.add_node("presenter", self._presenter.build())
+        g.add_node("after_presenter", self._after_presenter_adapter)
         
         # Flow: collector -> analyzer -> presenter
-        g.add_edge(START, "collector")
-        g.add_conditional_edges("collector", self._after_collector, {
+        g.add_edge(START, "before_collector")
+        g.add_edge("before_collector", "collector")
+        g.add_edge("collector", "after_collector")
+        g.add_conditional_edges("after_collector", self._after_collector, {
             "collector_to_analyzer": "collector_to_analyzer",
             # Continue collector path; if node interrupts, LangGraph suspends the run.
-            "collector": "collector",
+            "collector": "before_collector",
             END: END,
         })
-        g.add_edge("collector_to_analyzer", "analyzer")
-        g.add_conditional_edges("analyzer", self._after_analyzer, {
+        g.add_edge("collector_to_analyzer", "before_analyzer")
+        g.add_edge("before_analyzer", "analyzer")
+        g.add_edge("analyzer", "after_analyzer")
+        g.add_conditional_edges("after_analyzer", self._after_analyzer, {
             "analyzer_to_presenter": "analyzer_to_presenter",
             END: END,
         })
-        g.add_edge("analyzer_to_presenter", "presenter")
-        g.add_edge("presenter", END)
+        g.add_edge("analyzer_to_presenter", "before_presenter")
+        g.add_edge("before_presenter", "presenter")
+        g.add_edge("presenter", "after_presenter")
+        g.add_edge("after_presenter", END)
         
         return g.compile()
+
+    @staticmethod
+    async def _before_collector(state: SubgraphState) -> SubgraphState:
+        state["active_tool"] = "quantum_data_collector"
+        state["tool_status"] = "running"
+        return state
+
+    @staticmethod
+    async def _after_collector_adapter(state: SubgraphState) -> SubgraphState:
+        tool_result = state.get("tool_result", {}) or {}
+        state["pending_prompt_id"] = state.get("pending_prompt_id")
+        if tool_result:
+            state["tool_output"] = tool_result
+            if tool_result.get("error"):
+                state["tool_status"] = "error"
+            elif tool_result.get("is_complete"):
+                state["tool_status"] = "done"
+        return state
 
     @staticmethod
     async def _collector_to_analyzer(state: SubgraphState) -> SubgraphState:
@@ -90,9 +120,27 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
         state["tool_input"] = {"step_data": step_data}
         # Clear stale tool-local payloads before entering next tool.
         state["step_data"] = {}
+        state["tool_result"] = {}
         state["is_complete"] = False
         state["error"] = None
         state["tool_status"] = "running"
+        return state
+
+    @staticmethod
+    async def _before_analyzer(state: SubgraphState) -> SubgraphState:
+        state["active_tool"] = "quantum_analyzer"
+        state["tool_status"] = "running"
+        return state
+
+    @staticmethod
+    async def _after_analyzer_adapter(state: SubgraphState) -> SubgraphState:
+        tool_result = state.get("tool_result", {}) or {}
+        if tool_result:
+            state["tool_output"] = tool_result
+            if tool_result.get("error"):
+                state["tool_status"] = "error"
+            elif tool_result.get("is_complete"):
+                state["tool_status"] = "done"
         return state
 
     @staticmethod
@@ -103,9 +151,28 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
         state["tool_input"] = {"step_data": step_data}
         # Clear stale tool-local payloads before entering next tool.
         state["step_data"] = {}
+        state["tool_result"] = {}
         state["is_complete"] = False
         state["error"] = None
         state["tool_status"] = "running"
+        return state
+
+    @staticmethod
+    async def _before_presenter(state: SubgraphState) -> SubgraphState:
+        state["active_tool"] = "quantum_presenter"
+        state["tool_status"] = "running"
+        return state
+
+    @staticmethod
+    async def _after_presenter_adapter(state: SubgraphState) -> SubgraphState:
+        tool_result = state.get("tool_result", {}) or {}
+        if tool_result:
+            state["tool_output"] = tool_result
+            if tool_result.get("error"):
+                state["tool_status"] = "error"
+            elif tool_result.get("is_complete"):
+                state["tool_status"] = "done"
+        state["active_tool"] = None
         return state
     
     @staticmethod
@@ -118,8 +185,8 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
         If tool is suspended (interrupt), it will be resumed on next API call.
         """
         tool_status = state.get("tool_status", "idle")
-        tool_output = state.get("tool_output", {})
-        is_complete = tool_output and tool_output.get("is_complete")
+        tool_output = state.get("tool_output", {}) or {}
+        is_complete = bool(tool_output.get("is_complete"))
         
         print(f"[QUANTUM_SUBGRAPH] After collector - tool_status: {tool_status}, is_complete: {is_complete}")
         
@@ -128,7 +195,7 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
             return END
         
         # Check if collector tool is complete
-        if is_complete:
+        if tool_status == "done" or is_complete:
             print("[QUANTUM_SUBGRAPH] ✓ Collector complete, routing to analyzer")
             return "collector_to_analyzer"
         

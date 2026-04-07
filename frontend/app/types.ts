@@ -16,6 +16,7 @@ export interface SSEEvent {
     tool_total: number | null;
     resumable: boolean;
     can_escape: boolean;
+    pending_prompt_id?: string | null;
   };
 }
 
@@ -35,6 +36,7 @@ export interface ToolMeta {
 export interface QuestionEvent {
   text: string;
   step: number;
+  prompt_id?: string;
   input_type: "free_text" | "choice" | "number" | "date" | "confirm";
   options?: string[];
   min?: number;

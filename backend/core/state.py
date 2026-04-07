@@ -45,6 +45,9 @@ class SubgraphState(CoreState, total=False):
     tool_status: Literal["idle", "running", "done", "error"]
     tool_input: Dict  # data passed INTO the tool
     tool_output: Dict  # data returned FROM the tool
+    tool_result: Dict  # canonical raw result from the active tool
+    pending_prompt_id: Optional[str]
+    step: int
 
 
 class ToolState(SubgraphState, total=False):
@@ -60,3 +63,5 @@ class ToolState(SubgraphState, total=False):
     step_data: Dict  # accumulated data across steps
     is_complete: bool
     error: Optional[str]
+    # Canonical tool envelope consumed by Layer 2 adapter nodes.
+    tool_result: Dict

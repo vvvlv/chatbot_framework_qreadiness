@@ -196,8 +196,7 @@ Provide specific timeline recommendations based on the benchmarks."""
             print(f"[PRESENTER] ✓ Report generated ({len(state['readiness_report'])} chars)")
             
             state["is_complete"] = True
-            state["tool_status"] = "done"
-            state["tool_output"] = {"step_data": state.get("step_data", {}), "is_complete": True}
+            state["tool_result"] = {"step_data": state.get("step_data", {}), "is_complete": True, "error": None}
             await adispatch_custom_event("tool_progress", {"step": 1, "total": 1})
             await adispatch_custom_event(
                 "tool_complete",

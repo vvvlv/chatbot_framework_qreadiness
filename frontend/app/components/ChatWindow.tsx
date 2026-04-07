@@ -7,16 +7,22 @@ import { ChatInput } from './ChatInput';
 import { useState, useEffect } from 'react';
 
 export function ChatWindow() {
+  const isUuid = (value: string): boolean => {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value
+    );
+  };
+
   const [sessionId] = useState(() => {
     // Generate or retrieve session ID
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('session_id');
-      if (stored) return stored;
-      const newId = `session-${Date.now()}`;
+      if (stored && isUuid(stored)) return stored;
+      const newId = crypto.randomUUID();
       localStorage.setItem('session_id', newId);
       return newId;
     }
-    return `session-${Date.now()}`;
+    return crypto.randomUUID();
   });
 
   const {

@@ -248,10 +248,9 @@ Be specific and actionable."""
                 "unknowns": unknowns,
             }
             
-            # Mark tool as complete and set tool_output for subgraph
+            # Mark tool as complete and expose canonical tool_result envelope.
             state["is_complete"] = True
-            state["tool_status"] = "done"
-            state["tool_output"] = {"step_data": state["step_data"], "is_complete": True}
+            state["tool_result"] = {"step_data": state["step_data"], "is_complete": True, "error": None}
             await adispatch_custom_event("tool_progress", {"step": 1, "total": 1})
             await adispatch_custom_event(
                 "tool_complete",

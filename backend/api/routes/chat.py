@@ -1,13 +1,10 @@
-"""
-Chat route with SSE streaming and interrupt/resume support.
+"""Chat route with SSE streaming and interrupt/resume support."""
+import hashlib
+import os
+import time
+from collections import defaultdict, deque
 
-According to app_definition.md Section 6, the API must:
-- Detect suspended checkpoints and use Command(resume=...) to continue
-- Stream events via graph.astream_events()
-- Handle /cancel command for escaping tools
-"""
-import json
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
@@ -16,75 +13,71 @@ from api.models import ChatRequest
 from api.streaming import stream_graph_events
 
 router = APIRouter(prefix="/api", tags=["chat"])
+_REQUEST_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+_REQUESTS_PER_WINDOW = int(os.getenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "45"))
+_MAX_RESUME_BYTES = int(os.getenv("MAX_RESUME_BYTES", "8000"))
+_rate_buckets: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _client_key(request: Request, session_id: str) -> str:
+    ip = (request.client.host if request.client else "unknown").strip()
+    session_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+    return f"{ip}:{session_hash}"
+
+
+def _enforce_rate_limit(bucket_key: str) -> None:
+    now = time.time()
+    queue = _rate_buckets[bucket_key]
+    while queue and now - queue[0] > _REQUEST_WINDOW_SECONDS:
+        queue.popleft()
+    if len(queue) >= _REQUESTS_PER_WINDOW:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    queue.append(now)
 
 
 @router.post("/chat")
 async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
-    """
-    Chat endpoint with SSE streaming and interrupt/resume support.
-    
-    According to app_definition.md:
-    - Checks for suspended checkpoint (state.next)
-    - Uses Command(resume=...) if suspended, otherwise normal invocation
-    - Streams typed SSE events
-    - Handles /cancel command for escaping tools
-    """
-    print(f"\n[API_CHAT] ========================================")
-    print(f"[API_CHAT] New request - session_id: {req.session_id}")
-    print(f"[API_CHAT] Message: {req.message[:100]}...")
-    
-    config = {"configurable": {"thread_id": req.session_id}}
-    
+    """Chat endpoint with SSE streaming and interrupt/resume support."""
+    session_id = str(req.session_id)
+    _enforce_rate_limit(_client_key(request, session_id))
+    config = {"configurable": {"thread_id": session_id}}
+
     # Get graph from app state (set at startup)
     graph = request.app.state.graph
-    
+
     # Check if graph is suspended (has next checkpoint)
     state = await graph.aget_state(config)
     is_suspended = state and hasattr(state, "next") and state.next
-    print(f"[API_CHAT] Graph suspended: {is_suspended}")
-    
-    # Handle /cancel command
-    if req.message.strip().lower().startswith("/cancel"):
-        print("[API_CHAT] /cancel command received")
-        if state and hasattr(state, "next") and state.next:
-            print("[API_CHAT] Clearing suspended state...")
-            # Clear suspended state
-            await graph.aupdate_state(
-                config,
-                {
-                    "active_tool": None,
-                    "tool_status": "idle",
-                    "active_subgraph": None,
-                    "subgraph_status": "idle",
-                    "output": "Tool cancelled.",
-                },
-                as_node="output_formatter",
-            )
-            # Stream cancellation acknowledgement
-            async def cancel_response():
-                yield f"data: {json.dumps({'type': 'text_done', 'payload': {'full_text': 'Tool cancelled.'}, 'meta': {'session_id': req.session_id}})}\n\n"
-            return StreamingResponse(
-                cancel_response(),
-                media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-            )
-        else:
-            print("[API_CHAT] No active tool to cancel")
-    
+
+    if is_suspended and len(req.message.encode("utf-8")) > _MAX_RESUME_BYTES:
+        raise HTTPException(status_code=413, detail="Resume payload too large")
+
+    # Handle /cancel command: route through resume path when suspended.
+    if req.message.strip().lower() == "/cancel" and is_suspended:
+        input_ = Command(resume={"text": "/cancel", "prompt_id": req.prompt_id})
+        return StreamingResponse(
+            stream_graph_events(graph, input_, config),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     # Determine input based on suspension state
     if is_suspended:
-        # Graph is suspended — this message resumes a tool
-        print(f"[API_CHAT] Resuming suspended graph with message: {req.message[:50]}...")
-        input_ = Command(resume=req.message)
+        pending_prompt_id = None
+        if state and hasattr(state, "values") and state.values:
+            pending_prompt_id = state.values.get("pending_prompt_id")
+        if pending_prompt_id and req.prompt_id != pending_prompt_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Stale or invalid prompt_id for suspended workflow",
+            )
+        input_ = Command(resume={"text": req.message, "prompt_id": req.prompt_id})
     else:
-        # Fresh turn — normal invocation
-        print(f"[API_CHAT] Fresh turn - normal invocation")
         input_ = {
             "messages": [HumanMessage(content=req.message)],
-            "session_id": req.session_id,
+            "session_id": session_id,
         }
-    
-    print(f"[API_CHAT] Starting SSE stream...")
+
     # Stream events
     return StreamingResponse(
         stream_graph_events(graph, input_, config),

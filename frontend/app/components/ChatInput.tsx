@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, KeyboardEvent } from 'react';
+import { useState, KeyboardEvent, useEffect, useRef } from 'react';
 import { QuestionEvent, UIState } from '../types';
 
 interface ChatInputProps {
-  onSend: (text: string) => void;
+  onSend: (text: string, promptId?: string) => void;
   disabled: boolean;
   currentQuestion: QuestionEvent | null;
   uiState: UIState;
@@ -12,11 +12,29 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatInputProps) {
   const [input, setInput] = useState("");
+  const [showQuestionUpdate, setShowQuestionUpdate] = useState(false);
+  const lastQuestionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const nextText = currentQuestion?.text ?? null;
+    if (!nextText) {
+      lastQuestionRef.current = null;
+      setShowQuestionUpdate(false);
+      return;
+    }
+    if (lastQuestionRef.current && lastQuestionRef.current !== nextText) {
+      setShowQuestionUpdate(true);
+      const timeout = window.setTimeout(() => setShowQuestionUpdate(false), 1200);
+      lastQuestionRef.current = nextText;
+      return () => window.clearTimeout(timeout);
+    }
+    lastQuestionRef.current = nextText;
+  }, [currentQuestion?.text]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !disabled) {
-      onSend(input.trim());
+      onSend(input.trim(), currentQuestion?.prompt_id);
       setInput("");
     }
   };
@@ -37,16 +55,27 @@ export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatIn
   return (
     <div className="space-y-2">
       {currentQuestion && (
-        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
+        <div
+          className={`p-3 border rounded-lg transition-all ${
+            showQuestionUpdate
+              ? "bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 animate-pulse"
+              : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+          }`}
+        >
+          <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
             Question:
+            {showQuestionUpdate && (
+              <span className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                Updated
+              </span>
+            )}
           </p>
           <p className="text-sm text-blue-800 dark:text-blue-200">{displayText}</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               disabled={disabled}
-              onClick={() => onSend("/skip")}
+              onClick={() => onSend("/skip", currentQuestion?.prompt_id)}
               className="px-3 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
             >
               Skip
@@ -54,7 +83,7 @@ export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatIn
             <button
               type="button"
               disabled={disabled}
-              onClick={() => onSend("/clarify")}
+              onClick={() => onSend("/clarify", currentQuestion?.prompt_id)}
               className="px-3 py-1 text-xs text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded border border-blue-300 dark:border-blue-700 disabled:opacity-50"
             >
               Clarify
