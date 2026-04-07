@@ -54,10 +54,23 @@ export function ChatWindow() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {messages.length === 0 && (
-          <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
-            <p className="text-lg">Welcome! 👋</p>
-            <p className="mt-2">Start by asking about quantum readiness assessment.</p>
-            <p className="mt-1 text-sm">Try: "I want to assess my quantum readiness"</p>
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-md">
+              <p className="text-lg text-gray-700 dark:text-gray-300 font-medium">
+                Choose an app to start
+              </p>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                Start the structured workflow without typing a command.
+              </p>
+              <button
+                type="button"
+                disabled={uiState === "streaming"}
+                onClick={() => send("assessment")}
+                className="mt-6 w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                Start Quantum Readiness Assessment
+              </button>
+            </div>
           </div>
         )}
 

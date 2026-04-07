@@ -42,6 +42,24 @@ export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatIn
             Question:
           </p>
           <p className="text-sm text-blue-800 dark:text-blue-200">{displayText}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onSend("/skip")}
+              className="px-3 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+            >
+              Skip
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onSend("/clarify")}
+              className="px-3 py-1 text-xs text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded border border-blue-300 dark:border-blue-700 disabled:opacity-50"
+            >
+              Clarify
+            </button>
+          </div>
         </div>
       )}
       <form onSubmit={handleSubmit} className="flex gap-2">

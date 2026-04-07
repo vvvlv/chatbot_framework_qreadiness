@@ -80,7 +80,7 @@ async def stream_graph_events(
             print(f"[SSE_STREAM] ⚠ Error refreshing state meta: {e}")
             current_meta = _build_meta(config, None)
         return current_meta
-    
+
     # Emit session_state event first
     yield _sse("session_state", {}, await _refresh_meta())
     print(f"[SSE_STREAM] Emitted session_state event")

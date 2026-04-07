@@ -263,7 +263,7 @@ Company: {company} | Sector: {industry} | Date: {today}
                 report += f"   ⚠️ You were unsure about {dim} — {item.get('details', 'Requires follow-up')}\n"
         else:
             report += "   None detected. Confidence was medium/high across all dimensions.\n"
-
+        
         if state.get("timeline_guidance"):
             report += f"\n6. TIMELINE GUIDANCE\n   {state['timeline_guidance']}\n"
         
