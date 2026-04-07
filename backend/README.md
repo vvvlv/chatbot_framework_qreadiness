@@ -2,9 +2,72 @@
 
 Backend implementation of the Quantum Readiness assessment app using a 3-layer shell-and-core architecture.
 
+## Framework Intent
+
+The main focus of this project is to build a reusable agentic framework where new chatbot products can be created with minimal platform changes.
+
+- Keep **Layer 1 (Core/Shell)** stable and reusable across use cases.
+- Implement each new use case primarily by adding/changing **Layer 2 (App Subgraph)** orchestration.
+- Add new **Layer 3 (Tools)** only when a use case needs new capabilities.
+
+In this repository, **Quantum Readiness Chatbot** is the reference use case that validates this approach.
+
+## Technologies by Part
+
+- **API Shell (Layer 1 entrypoint)**
+  - FastAPI
+  - Pydantic v2
+  - Server-Sent Events (SSE) via `StreamingResponse`
+- **Core Graph Runtime (Layer 1)**
+  - LangGraph (`StateGraph`)
+  - LangChain Core messages/events
+  - LiteLLM through `core/model_gateway.py`
+- **Use-Case Orchestration (Layer 2)**
+  - LangGraph subgraphs (`apps/<use_case>/subgraph.py`)
+  - Typed state contracts in `core/state.py`
+- **Tool Execution (Layer 3)**
+  - LangGraph tool subgraphs
+  - `interrupt()` / `Command(resume=...)` conversational control
+  - Custom tool events (`tool_start`, `tool_question`, `tool_progress`, `tool_complete`)
+- **Data and Persistence**
+  - PostgreSQL (intended primary persistence)
+  - LangGraph `AsyncPostgresSaver` (production mode)
+  - In-memory saver fallback for local/dev mode
+  - `asyncpg` dependency for async DB path
+- **Frontend (companion app in this repo)**
+  - Next.js (App Router)
+  - React + TypeScript
+  - Tailwind CSS
+
 ## System Architecture
 
 The backend is organized into three layers:
+
+General overview: 
+Agentic Framework Overview
+
+Alternatively, more in depth 
+
+```mermaid
+flowchart TD
+  User[User or Frontend] --> ApiShell[Layer1 Core Shell\nFastAPI plus Core Graph]
+  ApiShell --> IntentRouter[Intent Router]
+  IntentRouter --> QuantumSubgraph[Layer2 App Subgraph\nQuantum Readiness]
+  IntentRouter --> FallbackLLM[Fallback LLM]
+
+  subgraph appLayer [Layer2 App Orchestration]
+    QuantumSubgraph --> CollectorTool[Layer3 Tool\nData Collector]
+    QuantumSubgraph --> AnalyzerTool[Layer3 Tool\nAnalyzer]
+    QuantumSubgraph --> PresenterTool[Layer3 Tool\nPresenter]
+  end
+
+  CollectorTool -->|"interrupt/resume with prompt_id"| ApiShell
+  PresenterTool --> SSE[SSE Event Stream]
+  FallbackLLM --> SSE
+  SSE --> User
+```
+
+
 
 - **Layer 1: Core (`core/`)**
 Platform-owned shell graph and shared infrastructure:
@@ -177,4 +240,19 @@ The system is designed for extensibility:
 - **Add a new tool**: create it under `tools/` and implement `ToolProtocol`
 - **Keep frontend dumb**: no prompt logic client-side; backend owns orchestration
 - **Keep model calls centralized**: route through `core/model_gateway.py`
+
+## Current Architecture Gaps
+
+These are known issues to address next:
+
+- **Collector resume UX still needs refinement**
+  - some interrupt/resume turns can still feel repetitive when clarification loops are long.
+- **Persistence dependency not always active**
+  - runtime currently falls back to in-memory checkpointer if Postgres saver dependency is missing.
+- **RAG data layer is still scaffolded**
+  - vector store and retriever flow are not fully implemented with production hybrid retrieval/reranking.
+- **State invariants need stronger runtime enforcement**
+  - ownership is clearer, but transition guards for `tool_status/subgraph_status` should be codified in tests and adapters.
+- **Security hardening is partial (auth deferred)**
+  - request validation, CORS, and rate limits exist, but user/session authentication and authorization are intentionally out of scope for now.
 
