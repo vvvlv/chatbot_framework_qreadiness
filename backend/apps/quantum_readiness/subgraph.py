@@ -96,12 +96,14 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
 
     @staticmethod
     async def _before_collector(state: SubgraphState) -> SubgraphState:
+        print("_before_collector ->")
         state["active_tool"] = "quantum_data_collector"
         state["tool_status"] = "running"
         return state
 
     @staticmethod
     async def _after_collector_adapter(state: SubgraphState) -> SubgraphState:
+        print("_after_collector_adapter ->")
         tool_result = state.get("tool_result", {}) or {}
         state["pending_prompt_id"] = state.get("pending_prompt_id")
         if tool_result:
@@ -114,6 +116,7 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
 
     @staticmethod
     async def _collector_to_analyzer(state: SubgraphState) -> SubgraphState:
+        print("_collector_to_analyzer ->")
         """Copy collector output into tool_input for analyzer."""
         tool_output = state.get("tool_output", {}) or {}
         step_data = tool_output.get("step_data", {})
@@ -128,12 +131,14 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
 
     @staticmethod
     async def _before_analyzer(state: SubgraphState) -> SubgraphState:
+        print("_before_analyzer ->")
         state["active_tool"] = "quantum_analyzer"
         state["tool_status"] = "running"
         return state
 
     @staticmethod
     async def _after_analyzer_adapter(state: SubgraphState) -> SubgraphState:
+        print("_after_analyzer_adapter ->")
         tool_result = state.get("tool_result", {}) or {}
         if tool_result:
             state["tool_output"] = tool_result
@@ -145,6 +150,7 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
 
     @staticmethod
     async def _analyzer_to_presenter(state: SubgraphState) -> SubgraphState:
+        print("_analyzer_to_presenter ->")
         """Copy analyzer output into tool_input for presenter."""
         tool_output = state.get("tool_output", {}) or {}
         step_data = tool_output.get("step_data", {})
@@ -159,12 +165,14 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
 
     @staticmethod
     async def _before_presenter(state: SubgraphState) -> SubgraphState:
+        print("_before_presenter")
         state["active_tool"] = "quantum_presenter"
         state["tool_status"] = "running"
         return state
 
     @staticmethod
     async def _after_presenter_adapter(state: SubgraphState) -> SubgraphState:
+        print("_after_presenter_adapter ->")
         tool_result = state.get("tool_result", {}) or {}
         if tool_result:
             state["tool_output"] = tool_result
@@ -184,6 +192,7 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
         If error, end subgraph.
         If tool is suspended (interrupt), it will be resumed on next API call.
         """
+        print("_after_collector ->")
         tool_status = state.get("tool_status", "idle")
         tool_output = state.get("tool_output", {}) or {}
         is_complete = bool(tool_output.get("is_complete"))
@@ -210,6 +219,7 @@ class QuantumReadinessSubgraph(SubgraphProtocol):
         
         Pass analyzer output to presenter.
         """
+        print("_after_analyzer ->")
         tool_output = state.get("tool_output", {})
         is_complete = tool_output and tool_output.get("is_complete")
         

@@ -23,7 +23,7 @@ from langgraph.types import interrupt
 
 from core.model_gateway import ModelGateway
 from core.protocols import ToolProtocol
-from core.state import ToolState
+from core.state import SubgraphState
 
 
 class FieldSpec(TypedDict):
@@ -34,10 +34,14 @@ class FieldSpec(TypedDict):
     example_answers: List[str]
 
 
-class QuantumDataCollectorState(ToolState, total=False):
+class QuantumDataCollectorState(SubgraphState, total=False):
     """State for the field-filling collector."""
 
-    tool_started: bool
+    # graph routing
+    error: Optional[str]
+    is_complete: bool # indicates if all steps are complete
+    next_step: Optional[str] # the next node to call in case of conditional edges
+    tool_started: bool # TODO : unecessary ?
 
     # Field filling
     field_values: Dict[str, Optional[str]]  # key -> rewritten value or None (skipped)
@@ -46,10 +50,11 @@ class QuantumDataCollectorState(ToolState, total=False):
     current_field_key: Optional[str]
     pending_question: Optional[str]  # current question to ask for current_field_key
     pending_prompt_id: Optional[str]
-    awaiting_answer: bool
+    awaiting_answer: bool # TODO : unecessary ?
     consumed_prompt_ids: List[str]
     retry_count: int
     last_validation_reason: Optional[str]
+    user_command: Optional[str] # potential inputed command between /cancel, /skip and /clarify
 
     # Audit
     questions_asked: List[Dict[str, Any]]
@@ -151,6 +156,7 @@ class QuantumDataCollectorTool(ToolProtocol):
               missing_bits: string[]
               reason: str | null
             """
+            print("_evaluate_and_rewrite ->")
             extra_rules = ""
             if field["key"] == "migration_progress":
                 extra_rules = """
@@ -216,6 +222,7 @@ Rules:
                 }
 
         async def _build_clarification_message(field: FieldSpec) -> str:
+            print("_build_clarification_message ->")
             prompt = f"""The user asked for clarification.
 
 Field: {field['key']}
@@ -256,6 +263,7 @@ Return ONLY the message text."""
             Generate a more concrete first question (still adaptive) using the LLM.
             Falls back to field['default_question'].
             """
+            print("_generate_initial_question ->")
             prompt = f"""You are collecting structured assessment fields.
 
 Field key: {field['key']}
@@ -283,45 +291,46 @@ Rules:
                 if q:
                     return q
             except Exception:
-                pass
+                print("An exception occured during _generate_initial_question")
             return field["default_question"]
 
-        async def step(state: QuantumDataCollectorState) -> QuantumDataCollectorState:
+        async def init_step(state: QuantumDataCollectorState) -> QuantumDataCollectorState:
+            print("init_step ->")
+
             # defaults
-            state.setdefault("tool_started", False)
             state.setdefault("field_values", {})
             state.setdefault("field_raw_values", {})
             state.setdefault("field_status", {})
             state.setdefault("current_field_key", None)
             state.setdefault("pending_question", None)
             state.setdefault("pending_prompt_id", None)
-            state.setdefault("awaiting_answer", False)
             state.setdefault("consumed_prompt_ids", [])
             state.setdefault("retry_count", 0)
             state.setdefault("last_validation_reason", None)
             state.setdefault("questions_asked", [])
             state.setdefault("answers_received", [])
             state.setdefault("is_complete", False)
+            state.setdefault("error", None)
+            state.setdefault("next_step", "pick_active_field")
 
-            if not state["tool_started"]:
-                await adispatch_custom_event(
-                    "tool_start",
-                    {
-                        "tool_name": self.name,
-                        "total_steps": total_steps,
-                        "fields": self.FIELD_SPECS,
-                        "skip_command": "/skip",
-                        "clarify_command": "/clarify",
-                    },
-                )
-                state["tool_started"] = True
-                state["tool_status"] = "running"
+            await adispatch_custom_event(
+                "tool_start",
+                {
+                    "tool_name": self.name,
+                    "total_steps": total_steps,
+                    "fields": self.FIELD_SPECS,
+                    "skip_command": "/skip",
+                    "clarify_command": "/clarify",
+                },
+            )
+            return state
 
-            if state.get("is_complete"):
-                return state
-
+        async def pick_active_field_step(state: QuantumDataCollectorState) -> QuantumDataCollectorState:
+            print("pick_active_field_step ->")
             # pick active field
+            state["next_step"] = "question"
             field_key = state.get("current_field_key") or _next_unfilled_key(state)
+            print("debug step (quantum_data_collector/tool.py l.330) : field_key :\n    ", field_key)
             if field_key is None:
                 # Build pipeline-compatible output (minimal).
                 collected = state.get("field_values", {})
@@ -333,27 +342,32 @@ Rules:
                     else:
                         crypto_risk_dimensions[dim] = {"score": 50, "confidence": "medium", "details": v}
 
-                state["step_data"] = {
+                step_data = {
                     "user_industry": collected.get("user_industry"),
                     "crypto_risk_dimensions": crypto_risk_dimensions,
                     "quantum_opportunity_dimensions": {},
                     "fields": collected,
                 }
-                state["tool_result"] = {
-                    "step_data": state["step_data"],
+                state["tool_output"] = {
+                    "step_data": step_data,
                     "is_complete": True,
                     "error": None,
                 }
                 state["is_complete"] = True
                 await adispatch_custom_event(
                     "tool_complete",
-                    {"tool_name": self.name, "step_data": state["step_data"]},
+                    {"tool_name": self.name, "step_data": step_data},
                 )
                 return state
 
-            field = _spec_for(field_key)
             state["current_field_key"] = field_key
+            return state
 
+        async def question_step(state: QuantumDataCollectorState) -> QuantumDataCollectorState:
+            print("question_step ->")
+            state["next_step"] = "HITL"
+            field_key = state.get("current_field_key")
+            field = _spec_for(field_key)
             if state.get("pending_question"):
                 question = state["pending_question"]
             else:
@@ -362,30 +376,35 @@ Rules:
                     collected=state.get("field_values", {}) or {},
                 )
             step_num = list(s["key"] for s in self.FIELD_SPECS).index(field_key) + 1
-            state["step"] = step_num
             prompt_id = state.get("pending_prompt_id") or str(uuid.uuid4())
             state["pending_prompt_id"] = prompt_id
 
-            if not state.get("awaiting_answer"):
-                state["questions_asked"].append(
-                    {
-                        "field_key": field_key,
-                        "question": question,
-                        "step": step_num,
-                        "retry": state.get("retry_count", 0),
-                        "prompt_id": prompt_id,
-                    }
-                )
-                state["awaiting_answer"] = True
+            state["questions_asked"].append(
+                {
+                    "field_key": field_key,
+                    "question": question,
+                    "step": step_num,
+                    "retry": state.get("retry_count", 0),
+                    "prompt_id": prompt_id,
+                }
+            )
+            return state
+
+        async def HITL_step(state: QuantumDataCollectorState) -> QuantumDataCollectorState:
+            print("HITL_step ->")
+            question = state.get("questions_asked")[-1]
+            print("debug step (quantum_data_collector/tool.py l.386) : question : ", question)
+            prompt_id = state.get("pending_prompt_id")
             answer = interrupt(
                 {
-                    "text": question,
+                    "text": question["question"],
                     "prompt_id": prompt_id,
-                    "step": step_num,
+                    "step": question["step"],
                     "input_type": "free_text",
                     "can_skip": True,
                 }
             )
+            print("debug step (quantum_data_collector/tool.py l.396) : line after interrupt()")
             state["awaiting_answer"] = False
 
             resume_prompt_id = None
@@ -396,62 +415,86 @@ Rules:
                 raw_answer = str(answer or "").strip()
             state["answers_received"].append(
                 {
-                    "field_key": field_key,
+                    "field_key": question["field_key"],
                     "question": question,
                     "raw_answer": raw_answer,
-                    "step": step_num,
+                    "step": question["step"],
                     "prompt_id": resume_prompt_id,
                 }
             )
             if resume_prompt_id and resume_prompt_id != prompt_id:
                 state["pending_question"] = question
                 state["last_validation_reason"] = "Stale prompt answer received."
+                state["next_step"] = "pick_active_field"
                 return state
             if prompt_id in state["consumed_prompt_ids"]:
                 state["pending_question"] = question
                 state["last_validation_reason"] = "Duplicate prompt answer ignored."
+                state["next_step"] = "pick_active_field"
                 return state
             state["consumed_prompt_ids"].append(prompt_id)
 
-            # Skip
             command = _normalized_command(raw_answer)
+            if (command == None):
+                state["next_step"] = "validate_and_rewrite"
+            else:
+                state["next_step"] = "command_handler"
+                state["user_command"] = command
+            return state
+        
+        async def command_handler_step(state: QuantumDataCollectorState) -> QuantumDataCollectorState:
+            print("command_handler_step ->")
+
+            state["next_step"] = "pick_active_field"
+            command = state.get("user_command")
+            answer = state.get("answers_received")[-1]
+
             if command == "/cancel":
                 state["error"] = "Tool cancelled by user."
                 state["is_complete"] = True
                 state["pending_prompt_id"] = None
-                state["tool_result"] = {"step_data": state.get("step_data", {}), "is_complete": True, "error": state["error"]}
+                state["tool_output"] = {"step_data": {}, "is_complete": True, "error": state["error"]}
                 return state
             if command == "/skip":
-                state["field_values"][field_key] = None
-                state["field_raw_values"][field_key] = raw_answer
-                state["field_status"][field_key] = "skipped"
+                state["field_values"][answer["field_key"]] = None
+                state["field_raw_values"][answer["field_key"]] = answer["raw_answer"]
+                state["field_status"][answer["field_key"]] = "skipped"
                 state["pending_question"] = None
                 state["pending_prompt_id"] = None
                 state["retry_count"] = 0
                 state["current_field_key"] = None
-                await adispatch_custom_event("tool_progress", {"step": step_num, "total": total_steps})
+                await adispatch_custom_event("tool_progress", {"step": answer["step"], "total": total_steps})
                 return state
 
             # Clarification request -> generate clarification message and re-ask.
             if command == "/clarify":
+                field = _spec_for(answer["field_key"])
                 state["pending_question"] = await _build_clarification_message(field)
                 state["pending_prompt_id"] = None
                 state["retry_count"] = min(state.get("retry_count", 0) + 1, max_retries_per_field)
                 return state
+        
+        async def validate_and_rewrite_step(state: QuantumDataCollectorState) -> QuantumDataCollectorState:
+            print("validate_and_rewrite_step ->")
+
+            state["next_step"] = "pick_active_field"
+            question = state.get("questions_asked")[-1]
+            answer = state.get("answers_received")[-1]
+            field = _spec_for(answer["field_key"])
 
             # Validate + rewrite with LLM
-            judged = await _evaluate_and_rewrite(field=field, question=question, user_answer=raw_answer)
+            judged = await _evaluate_and_rewrite(field=field, question=question["question"], user_answer=answer["raw_answer"])
             if judged.get("ok") and judged.get("rewritten"):
                 rewritten = str(judged["rewritten"]).strip()
-                state["field_values"][field_key] = rewritten
-                state["field_raw_values"][field_key] = raw_answer
-                state["field_status"][field_key] = "filled"
+                state["field_values"][answer["field_key"]] = rewritten
+                state["field_raw_values"][answer["field_key"]] = answer["raw_answer"]
+                state["field_status"][answer["field_key"]] = "filled"
                 state["pending_question"] = None
                 state["pending_prompt_id"] = None
                 state["retry_count"] = 0
                 state["current_field_key"] = None
                 state["last_validation_reason"] = None
-                await adispatch_custom_event("tool_progress", {"step": step_num, "total": total_steps})
+                await adispatch_custom_event("tool_progress", {"step": answer["step"], "total": total_steps})
                 return state
 
             # Not ok -> follow-up loop
@@ -460,14 +503,14 @@ Rules:
             state["last_validation_reason"] = judged.get("reason") or "Missing required details."
             if state["retry_count"] >= max_retries_per_field:
                 # Escape hatch: accept a low-confidence fill.
-                state["field_values"][field_key] = raw_answer or "No response"
-                state["field_raw_values"][field_key] = raw_answer
-                state["field_status"][field_key] = "filled"
+                state["field_values"][answer["field_key"]] = answer["raw_answer"] or "No response"
+                state["field_raw_values"][answer["field_key"]] = answer["raw_answer"]
+                state["field_status"][answer["field_key"]] = "filled"
                 state["pending_question"] = None
                 state["pending_prompt_id"] = None
                 state["retry_count"] = 0
                 state["current_field_key"] = None
-                await adispatch_custom_event("tool_progress", {"step": step_num, "total": total_steps})
+                await adispatch_custom_event("tool_progress", {"step": answer["step"], "total": total_steps})
                 return state
 
             state["pending_question"] = str(follow_up).strip()
@@ -475,10 +518,24 @@ Rules:
             return state
 
         def _continue_or_end(s: QuantumDataCollectorState) -> str:
-            return END if s.get("is_complete") else "step"
+            print("debut step (quantum_data_collector/tool.py l.485): state :\n      ", s)
+            return END if s.get("is_complete") else s.get("next_step")
 
         g = StateGraph(QuantumDataCollectorState)
-        g.add_node("step", step)
-        g.add_edge(START, "step")
-        g.add_conditional_edges("step", _continue_or_end)
+
+        g.add_node("init_state", init_step)
+        g.add_node("pick_active_field", pick_active_field_step)
+        g.add_node("question", question_step)
+        g.add_node("HITL", HITL_step)
+        g.add_node("command_handler", command_handler_step)
+        g.add_node("validate_and_rewrite", validate_and_rewrite_step)
+
+        g.add_edge(START, "init_state")
+        g.add_edge("init_state", "pick_active_field")
+        g.add_conditional_edges("pick_active_field", _continue_or_end)
+        g.add_edge("question", "HITL")
+        g.add_conditional_edges("HITL", _continue_or_end)
+        g.add_conditional_edges("command_handler", _continue_or_end)
+        g.add_edge("validate_and_rewrite", "pick_active_field")
+        
         return g.compile()

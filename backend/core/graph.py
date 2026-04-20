@@ -11,7 +11,7 @@ from core.nodes.intent_router import create_intent_router_node
 from core.nodes.output_formatter import output_formatter_node
 from core.nodes.session_manager import session_manager_node
 from core.registry import SubgraphRegistry
-from core.state import CoreState, ToolState
+from core.state import CoreState
 from core.model_gateway import ModelGateway
 
 
@@ -41,7 +41,7 @@ def build_core_graph(
     """
     # NOTE: top-level compiled state currently needs tool-owned fields to survive
     # interrupt/resume across nested tool graphs.
-    graph = StateGraph(ToolState)
+    graph = StateGraph(CoreState)
     
     # Create async wrapper for fallback_llm_node
     async def fallback_llm_wrapper(state: CoreState) -> CoreState:
