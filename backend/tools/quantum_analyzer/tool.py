@@ -34,7 +34,6 @@ class QuantumAnalyzerState(ToolState, total=False):
     archetype: str
     archetype_narrative: str
 
-
 class QuantumAnalyzerTool(ToolProtocol):
     """
     Analyzer Tool for Quantum Readiness assessment.
