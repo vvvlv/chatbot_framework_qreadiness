@@ -16,7 +16,8 @@ According to app_definition.md Section 7, all events follow a typed envelope:
 }
 """
 import json
-from typing import AsyncIterator, Dict, Optional
+import traceback
+from typing import Any, AsyncIterator, Dict, Optional
 
 from langgraph.types import Command
 
@@ -72,6 +73,7 @@ async def stream_graph_events(
     graph,
     input_,
     config: Dict,
+    interaction_logger=None,
 ) -> AsyncIterator[str]:
     """
     Stream graph execution events as SSE.
@@ -93,8 +95,29 @@ async def stream_graph_events(
     session_id = config.get("configurable", {}).get("thread_id", "unknown")
     is_resume = isinstance(input_, Command)
     print(f"[SSE_STREAM] Starting stream for session: {session_id}, resume: {is_resume}")
+
+    async def _log_event(
+        event_type: str,
+        *,
+        app_name: Optional[str] = None,
+        tool_name: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if interaction_logger is None:
+            return
+        try:
+            await interaction_logger.log_event(
+                session_id=session_id,
+                event_type=event_type,
+                app_name=app_name,
+                tool_name=tool_name,
+                payload=payload or {},
+            )
+        except Exception as exc:
+            print(f"[SSE_STREAM] ⚠ Failed to persist interaction event: {exc}")
     
     current_meta = _build_meta(config, None)
+    await _log_event("stream_start", payload={"is_resume": is_resume})
 
     async def _refresh_meta() -> Dict:
         nonlocal current_meta
@@ -138,6 +161,11 @@ async def stream_graph_events(
                 
                 if name == "tool_start":
                     print(f"[SSE_STREAM] Tool started: {data.get('tool_name')}")
+                    await _log_event(
+                        "tool_start",
+                        tool_name=data.get("tool_name"),
+                        payload=data,
+                    )
                     meta = await _refresh_meta()
                     yield _sse("tool_start", data, {
                         **meta,
@@ -147,6 +175,15 @@ async def stream_graph_events(
                 
                 elif name == "tool_question":
                     print(f"[SSE_STREAM] Tool question: {data.get('text', '')[:50]}...")
+                    await _log_event(
+                        "tool_question",
+                        tool_name=data.get("tool_name"),
+                        payload={
+                            "text": data.get("text"),
+                            "prompt_id": data.get("prompt_id"),
+                            "step": data.get("step"),
+                        },
+                    )
                     text = data.get("text")
                     prompt_id = data.get("prompt_id")
                     # Deduplicate identical tool_question emissions within the same stream.
@@ -172,6 +209,11 @@ async def stream_graph_events(
                 
                 elif name in ("tool_progress", "tool_complete"):
                     print(f"[SSE_STREAM] Tool {name}: {data}")
+                    await _log_event(
+                        name,
+                        tool_name=data.get("tool_name"),
+                        payload=data,
+                    )
                     yield _sse(name, data, await _refresh_meta())
             
             elif kind == "on_chain_error":
@@ -179,6 +221,10 @@ async def stream_graph_events(
                 error_data = event.get("data", {})
                 error_msg = str(error_data.get("error", "Unknown error"))
                 print(f"[SSE_STREAM] ✗ Chain error: {error_msg}")
+                await _log_event(
+                    "chain_error",
+                    payload={"message": error_msg},
+                )
                 yield _sse("error", {
                     "message": error_msg,
                     "recoverable": False,
@@ -188,16 +234,26 @@ async def stream_graph_events(
                 node_name = event.get("name", "")
                 if node_name:
                     print(f"[SSE_STREAM] Node started: {node_name}")
+                    await _log_event(
+                        "app_node_start",
+                        app_name=node_name,
+                        payload={"node": node_name},
+                    )
             
             elif kind == "on_chain_end":
                 node_name = event.get("name", "")
                 if node_name:
                     print(f"[SSE_STREAM] Node ended: {node_name}")
+                    await _log_event(
+                        "app_node_end",
+                        app_name=node_name,
+                        payload={"node": node_name},
+                    )
     
     except Exception as e:
         # Catch any streaming errors
         print(f"[SSE_STREAM] ✗ Streaming error: {e}")
-        import traceback
+        await _log_event("stream_error", payload={"message": str(e)})
         traceback.print_exc()
         yield _sse("error", {
             "message": str(e),
@@ -250,6 +306,10 @@ async def stream_graph_events(
 
             if final_output:
                 print(f"[SSE_STREAM] Emitting text_done ({len(final_output)} chars)")
+                await _log_event(
+                    "stream_output_complete",
+                    payload={"output_length": len(final_output)},
+                )
                 yield _sse("text_done", {"full_text": final_output}, await _refresh_meta())
             else:
                 print("[SSE_STREAM] No final output found to emit as text_done")
@@ -257,6 +317,7 @@ async def stream_graph_events(
         print(f"[SSE_STREAM] ⚠ Could not emit final SSE event from state: {e}")
 
     print(f"[SSE_STREAM] Stream complete - processed {event_count} events")
+    await _log_event("stream_complete", payload={"event_count": event_count})
 
 
 def _sse(type_: str, payload: Dict, meta: Dict) -> str:
@@ -279,7 +340,7 @@ def _sse(type_: str, payload: Dict, meta: Dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
 
-def _build_meta(config: Dict, state) -> Dict:
+def _build_meta(config: Dict, state) -> Dict: # TODO: update with new states
     """
     Build metadata for SSE events.
     

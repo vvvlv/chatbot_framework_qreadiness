@@ -15,20 +15,17 @@ load_dotenv()
 
 # Core framework imports
 from core.graph import build_core_graph
-from core.registry import SubgraphRegistry
+from core.registry import SubgraphRegistry, CommonToolRegistry
 from core.checkpointer import get_checkpointer
 from core.llm import get_model_gateway
+from core.interaction_logger import InteractionLogger
 
-# Tools (Layer 3)
-from tools.quantum_data_collector.tool import QuantumDataCollectorTool
-from tools.quantum_analyzer.tool import QuantumAnalyzerTool
-from tools.quantum_presenter.tool import QuantumPresenterTool
-from tools.rag.retriever_base import DummyRetriever
+# Common Tools (Layer 3)
+from common_tools.Interrupt_tool import InterruptTool
+from common_tools.RAG_tool import RAGTool
 
-# Use-case subgraphs (Layer 2)
-from apps.quantum_readiness.subgraph import QuantumReadinessSubgraph
-
-
+# Apps main graphs (Layer 2)
+from apps.quantum_readiness.maingraph import QuantumReadinessSubgraph
 
 app = FastAPI(title="Universal Chatbot Framework - Quantum Readiness")
 
@@ -55,9 +52,9 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     """
-    Application startup: register subgraphs and build core graph.
+    Application startup: register subgraphs and common tools and build core graph.
     
-    According to app_definition.md, this is where all subgraphs are
+    According to app_definition.md, this is where all subgraphs and common tools are
     instantiated and registered. Adding a new use case means adding
     lines here — nothing else changes.
     """
@@ -68,34 +65,46 @@ async def startup():
     # Initialize core shared services
     model_gateway = get_model_gateway()
     
-    # Instantiate tools (Layer 3)
-    retriever = DummyRetriever()  # TODO: Replace with LlamaIndex + pgvector
-    data_collector = QuantumDataCollectorTool(model_gateway=model_gateway)
-    analyzer = QuantumAnalyzerTool(model_gateway=model_gateway)
-    presenter = QuantumPresenterTool(model_gateway=model_gateway, retriever=retriever)
+    # Instanciate and register common tools
+    commonToolRegistry = CommonToolRegistry()
+
+    # Register common tools
+    interrupt_tool = InterruptTool()
+    rag_tool = RAGTool()
+    commonToolRegistry.register(interrupt_tool)
+    commonToolRegistry.register(rag_tool)
     
     # Instantiate and register subgraphs (Layer 2)
-    registry = SubgraphRegistry()
+    subgraphRegistry = SubgraphRegistry()
     
     # Register Quantum Readiness subgraph
     quantum_subgraph = QuantumReadinessSubgraph(
-        data_collector=data_collector,
-        analyzer=analyzer,
-        presenter=presenter,
+        commonTools=commonToolRegistry,
+        model_gateway=model_gateway
     )
-    registry.register(quantum_subgraph)
+    subgraphRegistry.register(quantum_subgraph)
     
     # Build and store the compiled graph
     checkpointer = await get_checkpointer()
     app.state.graph = build_core_graph(
-        registry=registry,
+        registry=subgraphRegistry,
         model_gateway=model_gateway,
         checkpointer=checkpointer,
     )
     
-    print(f"\n✓ Core graph built with {len(registry)} subgraph(s)")
+    app.state.interaction_logger = InteractionLogger()
+
+    print(f"\n✓ Core graph built with {len(subgraphRegistry)} subgraph(s)")
+    print("✓ Interaction logger initialized")
     print("="*60 + "\n")
 
+
+@app.on_event("shutdown")
+async def shutdown():
+    """Close runtime services on shutdown."""
+    interaction_logger = getattr(app.state, "interaction_logger", None)
+    if interaction_logger:
+        await interaction_logger.close()
 
 # Include routes
 from api.routes.chat import router as chat_router

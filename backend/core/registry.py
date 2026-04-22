@@ -6,8 +6,7 @@ uses their describe() strings to build a dynamic routing table.
 """
 from typing import Dict
 
-from core.protocols import SubgraphProtocol
-
+from core.protocols import SubgraphProtocol, ToolProtocol
 
 class SubgraphRegistry:
     """
@@ -58,3 +57,52 @@ class SubgraphRegistry:
     def __len__(self) -> int:
         """Number of registered subgraphs."""
         return len(self._subgraphs)
+
+class CommonToolRegistry:
+    """
+    Registry for Layer 3 Common Tools.
+    
+    Common Tools are registered at startup, and can be used by any Subgraph.
+    """
+
+    def __init__(self):
+        self._commonTools: Dict[str, ToolProtocol] = {}
+
+    def register(self, tool: ToolProtocol) -> None:
+        """
+        Register a common tool.
+        
+        Args:
+            tool: tool implementing ToolProtocol
+        """
+        if not hasattr(tool, 'name') or not tool.name:
+            raise ValueError(f"Tool must have a 'name' attribute: {tool}")
+        
+        if not hasattr(tool, 'describe') or not callable(tool.describe):
+            raise ValueError(f"Subgraph must implement 'describe()' method: {tool}")
+        
+        if not hasattr(tool, 'build') or not callable(tool.build):
+            raise ValueError(f"Subgraph must implement 'build()' method: {tool}")
+        
+        self._commonTools[tool.name] = tool
+        print(f"✓ Registered subgraph: {tool.name} - {tool.describe()}")
+
+    def get(self, name: str) -> ToolProtocol:
+        """Get a tool by name."""
+        return self._commonTools[name]
+
+    def items(self):
+        """Iterate over (name, tool) pairs."""
+        return self._commonTools.items()
+    
+    def __iter__(self):
+        """Iterate over tools names."""
+        return iter(self._commonTools.keys())
+    
+    def __contains__(self, name: str) -> bool:
+        """Check if a tool name is registered."""
+        return name in self._commonTools
+    
+    def __len__(self) -> int:
+        """Number of registered tools."""
+        return len(self._commonTools)

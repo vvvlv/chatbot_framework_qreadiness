@@ -13,7 +13,7 @@ from core.llm import get_model_gateway, llm
 from core.vector_store import get_vector_store
 from core.protocols import SubgraphProtocol, ToolProtocol
 from core.registry import SubgraphRegistry
-from core.state import CoreState, SubgraphState, ToolState
+from core.state import CoreState, SubgraphState
 
 __all__ = [
     "build_core_graph",
@@ -26,5 +26,4 @@ __all__ = [
     "SubgraphRegistry",
     "CoreState",
     "SubgraphState",
-    "ToolState",
 ]

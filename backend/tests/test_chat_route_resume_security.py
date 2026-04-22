@@ -39,7 +39,7 @@ def test_rejects_stale_prompt_id_on_resume():
 
 
 def test_accepts_matching_prompt_id_on_resume(monkeypatch):
-    async def fake_stream_graph_events(_graph, _input, _config):
+    async def fake_stream_graph_events(_graph, _input, _config, interaction_logger=None):
         yield 'data: {"type":"session_state","payload":{},"meta":{"session_id":"x"}}\n\n'
 
     monkeypatch.setattr(chat_routes, "stream_graph_events", fake_stream_graph_events)

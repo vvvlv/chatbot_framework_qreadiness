@@ -3,7 +3,6 @@ State schema hierarchy for the three-layer architecture.
 
 Layer 1 (Core): CoreState
 Layer 2 (Subgraphs): SubgraphState(CoreState)
-Layer 3 (Tools): ToolState(SubgraphState)
 """
 from typing import Annotated, Dict, Literal, Optional, TypedDict
 
@@ -31,37 +30,23 @@ class CoreState(TypedDict, total=False):
     # Passthrough
     metadata: Dict  # session-level context (user_id, locale, etc.)
 
+class CommonToolInput(TypedDict, total=False):
+    args: Dict
+    nextNode: Optional[str]
 
 class SubgraphState(CoreState, total=False):
     """
-    Layer 2 state - owned by use-case subgraphs.
+#     Layer 2 state - owned by use-case subgraphs.
     
-    Subgraphs may only write to:
-    - Their own fields (workflow-specific)
-    - Layer 2 fields: active_tool, tool_status, tool_input, tool_output
-    - NOT Layer 1 fields (messages, intent, etc.)
-    """
-    active_tool: Optional[str]
-    tool_status: Literal["idle", "running", "done", "error"]
-    tool_input: Dict  # data passed INTO the tool
-    tool_output: Dict  # data returned FROM the tool
-    tool_result: Dict  # canonical raw result from the active tool
-    pending_prompt_id: Optional[str]
-    step: int
-
-
-class ToolState(SubgraphState, total=False):
-    """
-    Layer 3 state - owned by tool graphs.
-    
-    Tools may only write to:
-    - Their own tool-specific fields
-    - Layer 3 fields: step, step_data, is_complete, error
-    - NOT Layer 1 or Layer 2 fields
-    """
-    step: int
-    step_data: Dict  # accumulated data across steps
-    is_complete: bool
-    error: Optional[str]
-    # Canonical tool envelope consumed by Layer 2 adapter nodes.
-    tool_result: Dict
+#     Subgraphs may only write to:
+#     - Their own fields (workflow-specific)
+#     - Layer 2 fields: nextNode, nextData, error...
+#     - NOT Layer 1 fields (messages, intent, etc.)
+#   """
+    currentStep: str # name of the current step in which the node is running (eg "collecting", "analysing" or "presenting" in quantum readiness). 
+    nextNode: Optional[str] # next node to be executed (in case of conditional edges)
+    stepData: Dict # data of the step (eg for "collector" step, stepData is a QuantumDataCollectorState)
+    error: Optional[str] # the error message of the last error that occured
+    pending_prompt_id: Optional[str] # ?
+    common_tool_output: Optional[Dict] # output of common tools (can be any form)
+    common_tool_input: Optional[CommonToolInput] # Input data for common tools

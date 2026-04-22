@@ -19,6 +19,8 @@ export function useChat(sessionId: string) {
   const [currentResponse, setCurrentResponse] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const responseBufferRef = useRef<string>("");
+  const seenQuestionPromptIdsRef = useRef<Set<string>>(new Set());
+  const lastQuestionTextRef = useRef<string | null>(null);
 
   const handleEvent = useCallback((event: SSEEvent) => {
     switch (event.type) {
@@ -56,6 +58,8 @@ export function useChat(sessionId: string) {
 
       case "tool_start":
         setUIState("tool_active");
+        seenQuestionPromptIdsRef.current.clear();
+        lastQuestionTextRef.current = null;
         setToolMeta({
           name: event.meta.active_tool || "unknown",
           total: event.meta.tool_total || 0,
@@ -64,6 +68,28 @@ export function useChat(sessionId: string) {
         break;
 
       case "tool_question":
+        {
+          const questionText = String(event.payload.text || "").trim();
+          const promptId = event.payload.prompt_id || event.meta.pending_prompt_id || undefined;
+          const alreadySeen =
+            (promptId && seenQuestionPromptIdsRef.current.has(promptId)) ||
+            (!promptId && lastQuestionTextRef.current === questionText);
+          if (questionText && !alreadySeen) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: promptId ? `q-${promptId}` : `q-${Date.now()}`,
+                role: "assistant",
+                content: questionText,
+                timestamp: new Date(),
+              },
+            ]);
+          }
+          if (promptId) {
+            seenQuestionPromptIdsRef.current.add(promptId);
+          }
+          lastQuestionTextRef.current = questionText || null;
+        }
         setUIState("awaiting_input");
         setCurrentQuestion({
           text: event.payload.text,
@@ -89,6 +115,8 @@ export function useChat(sessionId: string) {
         setUIState("idle");
         setToolMeta(null);
         setCurrentQuestion(null);
+        seenQuestionPromptIdsRef.current.clear();
+        lastQuestionTextRef.current = null;
         break;
 
       case "error":
