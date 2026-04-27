@@ -1,6 +1,8 @@
 'use client';
 
 import { Message } from '../types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface MessageBubbleProps {
   message: Message;
@@ -19,7 +21,15 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
             : "border border-slate-700/80 bg-slate-900/90 text-slate-100"
         } ${isStreaming ? "opacity-70" : ""}`}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {isUser ? (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        ) : (
+          <div className="prose prose-invert prose-sm max-w-none break-words prose-headings:mb-2 prose-headings:mt-3 prose-p:my-2 prose-li:my-1 prose-ul:my-2 prose-ol:my-2">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
         {isStreaming && (
           <span className="inline-block w-2 h-2 bg-current rounded-full animate-pulse ml-1" />
         )}

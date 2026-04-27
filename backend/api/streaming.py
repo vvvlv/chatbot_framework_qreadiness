@@ -206,6 +206,14 @@ async def stream_graph_events(
                         "pending_prompt_id": prompt_id or meta.get("pending_prompt_id"),
                         },
                     )
+
+                elif name == "tool_intro":
+                    await _log_event(
+                        "tool_intro",
+                        tool_name=data.get("tool_name"),
+                        payload=data,
+                    )
+                    yield _sse("tool_intro", data, await _refresh_meta())
                 
                 elif name in ("tool_progress", "tool_complete"):
                     print(f"[SSE_STREAM] Tool {name}: {data}")
@@ -361,6 +369,9 @@ def _build_meta(config: Dict, state) -> Dict: # TODO: update with new states
         "resumable": False,
         "can_escape": False,
         "pending_prompt_id": None,
+        "recommended_next_chatbot": None,
+        "completed_chatbots": [],
+        "chatbot_summaries": {},
     }
     
     if state:
@@ -374,6 +385,10 @@ def _build_meta(config: Dict, state) -> Dict: # TODO: update with new states
             values = state.values
             meta["active_tool"] = values.get("active_tool")
             meta["pending_prompt_id"] = values.get("pending_prompt_id")
+            metadata = values.get("metadata", {}) if isinstance(values.get("metadata", {}), dict) else {}
+            meta["recommended_next_chatbot"] = metadata.get("recommended_next_chatbot")
+            meta["completed_chatbots"] = metadata.get("completed_chatbots", [])
+            meta["chatbot_summaries"] = metadata.get("chatbot_summaries", {})
             if meta["active_tool"]:
                 # Try to extract tool step info from state
                 meta["tool_step"] = values.get("step")

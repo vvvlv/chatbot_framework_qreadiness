@@ -30,6 +30,18 @@ def create_intent_router_node(registry: SubgraphRegistry, model_gateway: ModelGa
         session_id = state.get("session_id", "unknown")
         print(f"[INTENT_ROUTER] Classifying intent for session: {session_id}")
 
+        sequence = [
+            "quantum_competitiveness",
+            "cryptographic_risk_security",
+            "roadmap_chatbot",
+        ]
+
+        def _next_in_sequence(completed: list[str]) -> str | None:
+            for chatbot in sequence:
+                if chatbot not in completed:
+                    return chatbot
+            return None
+
         # If a subgraph is already active/running, keep routing to it.
         # This prevents resumed interrupt answers ("yes", "7 years") from being
         # reclassified as fallback turns.
@@ -51,6 +63,25 @@ def create_intent_router_node(registry: SubgraphRegistry, model_gateway: ModelGa
         last_message = messages[-1]
         user_input = last_message.content if hasattr(last_message, 'content') else str(last_message)
         print(f"[INTENT_ROUTER] User input: {user_input[:100]}...")
+        metadata = state.get("metadata", {}) or {}
+
+        forced_chatbot = metadata.get("selected_chatbot")
+        if forced_chatbot in registry:
+            print(f"[INTENT_ROUTER] Forced routing to selected_chatbot: {forced_chatbot}")
+            state["intent"] = forced_chatbot
+            state["active_subgraph"] = forced_chatbot
+            state["subgraph_status"] = "running"
+            return state
+
+        completed_chatbots = list(metadata.get("completed_chatbots", []))
+        if user_input.strip().lower() in {"next", "continue", "continue flow", "next chatbot"}:
+            next_chatbot = _next_in_sequence(completed_chatbots)
+            if next_chatbot and next_chatbot in registry:
+                print(f"[INTENT_ROUTER] Continue intent routed to: {next_chatbot}")
+                state["intent"] = next_chatbot
+                state["active_subgraph"] = next_chatbot
+                state["subgraph_status"] = "running"
+                return state
         
         # Build classification prompt from registered subgraphs
         subgraph_descriptions = []
@@ -78,9 +109,11 @@ Available capabilities:
 Classify the user's intent. Return ONLY the name of the most appropriate capability, or "fallback" if none match.
 
 Examples:
-- User: "I want to assess my quantum readiness" → quantum_readiness
+- User: "I want to assess competitiveness" → quantum_competitiveness
+- User: "I want to assess cryptographic risk" → cryptographic_risk_security
+- User: "Help me build a roadmap" → roadmap_chatbot
 - User: "Hello" → fallback
-- User: "Help me with quantum cryptography" → quantum_readiness
+- User: "Help me with quantum cryptography" → cryptographic_risk_security
 
 Return only the capability name, nothing else."""
 

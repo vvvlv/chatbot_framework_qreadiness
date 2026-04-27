@@ -5,6 +5,10 @@
  */
 
 export type UIState = "idle" | "streaming" | "tool_active" | "awaiting_input" | "error";
+export type ChatbotKind =
+  | "quantum_competitiveness"
+  | "cryptographic_risk_security"
+  | "roadmap_chatbot";
 
 export interface SSEEvent {
   type: string;
@@ -17,6 +21,9 @@ export interface SSEEvent {
     resumable: boolean;
     can_escape: boolean;
     pending_prompt_id?: string | null;
+    recommended_next_chatbot?: ChatbotKind | null;
+    completed_chatbots?: ChatbotKind[];
+    chatbot_summaries?: Partial<Record<ChatbotKind, string>>;
   };
 }
 
@@ -41,4 +48,9 @@ export interface QuestionEvent {
   options?: string[];
   min?: number;
   max?: number;
+}
+
+export interface SendOptions {
+  selectedChatbot?: ChatbotKind;
+  contextMessage?: string;
 }

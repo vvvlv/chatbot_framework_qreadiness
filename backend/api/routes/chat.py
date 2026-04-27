@@ -174,23 +174,29 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
         )
         input_ = Command(resume={"text": req.message, "prompt_id": req.prompt_id})
     else:
+        metadata: Dict[str, Any] = {"is_new_turn": True}
+        if req.selected_chatbot:
+            metadata["selected_chatbot"] = req.selected_chatbot
+        if req.context_message:
+            metadata["context_message"] = req.context_message
         await _log_event_safe(
             interaction_logger,
             session_id=session_id,
             event_type="user_message",
             user_message=req.message,
-            payload={"is_new_turn": True},
+            payload=metadata,
         )
         await _log_user_message_safe(
             interaction_logger,
             session_id=session_id,
             message=req.message,
             is_resume=False,
-            metadata={"kind": "new_turn"},
+            metadata={"kind": "new_turn", **metadata},
         )
         input_ = {
             "messages": [HumanMessage(content=req.message)],
             "session_id": session_id,
+            "metadata": metadata,
         }
 
     # Stream events

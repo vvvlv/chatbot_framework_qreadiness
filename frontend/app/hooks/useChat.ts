@@ -6,7 +6,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent } from '../types';
+import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent, SendOptions, ChatbotKind } from '../types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -15,6 +15,9 @@ export function useChat(sessionId: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [toolMeta, setToolMeta] = useState<ToolMeta | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionEvent | null>(null);
+  const [recommendedNextChatbot, setRecommendedNextChatbot] = useState<ChatbotKind | null>(null);
+  const [completedChatbots, setCompletedChatbots] = useState<ChatbotKind[]>([]);
+  const [chatbotSummaries, setChatbotSummaries] = useState<Partial<Record<ChatbotKind, string>>>({});
   const [error, setError] = useState<string | null>(null);
   const [currentResponse, setCurrentResponse] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -23,6 +26,16 @@ export function useChat(sessionId: string) {
   const lastQuestionTextRef = useRef<string | null>(null);
 
   const handleEvent = useCallback((event: SSEEvent) => {
+    if (event.meta?.recommended_next_chatbot !== undefined) {
+      setRecommendedNextChatbot((event.meta.recommended_next_chatbot as ChatbotKind | null) ?? null);
+    }
+    if (event.meta?.completed_chatbots) {
+      setCompletedChatbots(event.meta.completed_chatbots as ChatbotKind[]);
+    }
+    if (event.meta?.chatbot_summaries) {
+      setChatbotSummaries(event.meta.chatbot_summaries as Partial<Record<ChatbotKind, string>>);
+    }
+
     switch (event.type) {
       case "session_state":
         if (event.meta.resumable) {
@@ -65,6 +78,24 @@ export function useChat(sessionId: string) {
           total: event.meta.tool_total || 0,
           step: 0,
         });
+        break;
+
+      case "tool_intro":
+        {
+          const introText = String(event.payload.text || "").trim();
+          const title = String(event.payload.title || "").trim();
+          if (introText) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `intro-${Date.now()}`,
+                role: "assistant",
+                content: title ? `## ${title}\n\n${introText}` : introText,
+                timestamp: new Date(),
+              },
+            ]);
+          }
+        }
         break;
 
       case "tool_question":
@@ -129,7 +160,7 @@ export function useChat(sessionId: string) {
     }
   }, []);
 
-  const send = useCallback(async (text: string, promptId?: string) => {
+  const send = useCallback(async (text: string, promptId?: string, options?: SendOptions) => {
     if (!text.trim()) return;
 
     // Add user message
@@ -157,6 +188,8 @@ export function useChat(sessionId: string) {
           message: text,
           session_id: sessionId,
           prompt_id: promptId,
+          selected_chatbot: options?.selectedChatbot,
+          context_message: options?.contextMessage,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -212,6 +245,19 @@ export function useChat(sessionId: string) {
     send("/cancel", currentQuestion?.prompt_id);
   }, [send, currentQuestion]);
 
+  const showSavedSummary = useCallback((summary: string) => {
+    if (!summary.trim()) return;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `summary-${Date.now()}`,
+        role: "assistant",
+        content: summary,
+        timestamp: new Date(),
+      },
+    ]);
+  }, []);
+
   return {
     uiState,
     messages,
@@ -219,7 +265,11 @@ export function useChat(sessionId: string) {
     currentQuestion,
     error,
     currentResponse,
+    recommendedNextChatbot,
+    completedChatbots,
+    chatbotSummaries,
     send,
     cancel,
+    showSavedSummary,
   };
 }

@@ -25,7 +25,7 @@ from common_tools.Interrupt_tool import InterruptTool
 from common_tools.RAG_tool import RAGTool
 
 # Apps main graphs (Layer 2)
-from apps.quantum_readiness.maingraph import QuantumReadinessSubgraph
+from apps.three_chatbots import build_journey_subgraphs
 
 app = FastAPI(title="Universal Chatbot Framework - Quantum Readiness")
 
@@ -77,12 +77,13 @@ async def startup():
     # Instantiate and register subgraphs (Layer 2)
     subgraphRegistry = SubgraphRegistry()
     
-    # Register Quantum Readiness subgraph
-    quantum_subgraph = QuantumReadinessSubgraph(
-        commonTools=commonToolRegistry,
-        model_gateway=model_gateway
+    # Register journey subchatbots
+    journey_subgraphs = build_journey_subgraphs(
+        model_gateway=model_gateway,
+        interrupt_tool=interrupt_tool,
     )
-    subgraphRegistry.register(quantum_subgraph)
+    for subgraph in journey_subgraphs:
+        subgraphRegistry.register(subgraph)
     
     # Build and store the compiled graph
     checkpointer = await get_checkpointer()
