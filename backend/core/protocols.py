@@ -4,7 +4,7 @@ Protocols for subgraphs and tools.
 Subgraphs and tools must implement these protocols to be registered
 in the framework.
 """
-from typing import Protocol, Any
+from typing import Protocol, Any, Optional
 
 
 class SubgraphProtocol(Protocol):
@@ -53,7 +53,7 @@ class ToolProtocol(Protocol):
         """
         ...
 
-    def build(self) -> Any:
+    def build(self, args: Optional[dict] = None) -> Any:
         """
         Return a compiled LangGraph tool graph.
         Called once at application startup.

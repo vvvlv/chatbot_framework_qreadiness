@@ -1,5 +1,4 @@
 version: "3.9"
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -17,7 +16,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: qreadiness-litellm
@@ -25,6 +23,41 @@ services:
       - "4000:4000"
     command: ["--host", "0.0.0.0", "--port", "4000"]
     restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://chatbot:chatbot@postgres:5432/chatbot
+      INTERACTION_LOG_DB_URL: postgresql://chatbot:chatbot@postgres:5432/chatbot
+      ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8002:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8002
+    depends_on:
+      - backend
+    ports:
+      - "3001:3000"
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@qreadiness.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    depends_on:
+      - postgres
+    ports:
+      - "5051:80"
 
 volumes:
   postgres_data:

@@ -12,24 +12,13 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatInputProps) {
   const [input, setInput] = useState("");
-  const [showQuestionUpdate, setShowQuestionUpdate] = useState(false);
-  const lastQuestionRef = useRef<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    const nextText = currentQuestion?.text ?? null;
-    if (!nextText) {
-      lastQuestionRef.current = null;
-      setShowQuestionUpdate(false);
-      return;
+    if (uiState === "awaiting_input") {
+      inputRef.current?.focus();
     }
-    if (lastQuestionRef.current && lastQuestionRef.current !== nextText) {
-      setShowQuestionUpdate(true);
-      const timeout = window.setTimeout(() => setShowQuestionUpdate(false), 1200);
-      lastQuestionRef.current = nextText;
-      return () => window.clearTimeout(timeout);
-    }
-    lastQuestionRef.current = nextText;
-  }, [currentQuestion?.text]);
+  }, [uiState, currentQuestion?.prompt_id]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,66 +35,51 @@ export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatIn
     }
   };
 
-  // Show question if awaiting input
-  const displayText = currentQuestion ? currentQuestion.text : "";
   const placeholder = currentQuestion
-    ? "Type your answer..."
+    ? "Write your answer..."
     : "Type your message...";
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {currentQuestion && (
-        <div
-          className={`p-3 border rounded-lg transition-all ${
-            showQuestionUpdate
-              ? "bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 animate-pulse"
-              : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
-          }`}
-        >
-          <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
-            Question:
-            {showQuestionUpdate && (
-              <span className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                Updated
-              </span>
-            )}
-          </p>
-          <p className="text-sm text-blue-800 dark:text-blue-200">{displayText}</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onSend("/skip", currentQuestion?.prompt_id)}
-              className="px-3 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
-            >
-              Skip
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onSend("/clarify", currentQuestion?.prompt_id)}
-              className="px-3 py-1 text-xs text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded border border-blue-300 dark:border-blue-700 disabled:opacity-50"
-            >
-              Clarify
-            </button>
-          </div>
+        <div className="flex items-center gap-2 text-xs text-slate-300">
+          <span className="inline-flex items-center rounded-full border border-slate-600 bg-slate-800 px-2.5 py-1">
+            Awaiting your answer
+          </span>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSend("/skip", currentQuestion?.prompt_id)}
+            className="rounded-full border border-slate-600 px-3 py-1 hover:bg-slate-800 disabled:opacity-50"
+          >
+            Skip
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSend("/clarify", currentQuestion?.prompt_id)}
+            className="rounded-full border border-indigo-500/50 px-3 py-1 text-indigo-200 hover:bg-indigo-500/10 disabled:opacity-50"
+          >
+            Clarify
+          </button>
         </div>
       )}
       <form onSubmit={handleSubmit} className="flex gap-2">
         <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
+          className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
           style={{ minHeight: "44px", maxHeight: "120px" }}
         />
         <button
           type="submit"
           disabled={disabled || !input.trim()}
-          className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          className="rounded-xl bg-indigo-500 px-6 py-2 font-medium text-white hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
         >
           {disabled ? "Sending..." : "Send"}
         </button>
