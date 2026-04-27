@@ -43,7 +43,7 @@ class SubgraphState(CoreState, total=False):
 #     - Layer 2 fields: nextNode, nextData, error...
 #     - NOT Layer 1 fields (messages, intent, etc.)
 #   """
-    currentStep: str # name of the current step in which the node is running (eg "collecting", "analysing" or "presenting" in quantum readiness). 
+    currentStep: str # arbitrary name of the current step in which the node is running (eg "collecting", "analysing" or "presenting" in quantum readiness). 
     nextNode: Optional[str] # next node to be executed (in case of conditional edges)
     stepData: Dict # data of the step (eg for "collector" step, stepData is a QuantumDataCollectorState)
     error: Optional[str] # the error message of the last error that occured

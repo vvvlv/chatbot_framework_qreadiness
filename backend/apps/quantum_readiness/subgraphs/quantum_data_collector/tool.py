@@ -281,6 +281,7 @@ class QuantumDataCollectorTool(SubgraphProtocol):
         state["common_tool_input"] = {
             "nextNode": "process_answer",
             "args": {
+                "event_name": "tool_question",
                 "text": question,
                 "prompt_id": prompt_id,
                 "step": step_num,

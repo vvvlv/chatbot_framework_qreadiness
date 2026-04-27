@@ -1,8 +1,18 @@
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from typing import Optional, TypedDict, Dict
 
 from core.protocols import ToolProtocol
 from core.state import SubgraphState
+
+class InterruptArg(TypedDict, total=False): # TODO : redefined it
+    event_name: str # name of interrupt event. default is "interrupt"
+    text: Optional[str] # question to ask
+    prompt_id: str
+    step: Optional[int]
+    input_type: Optional[str]
+    can_skip: bool
+    other_data: Optional[Dict]
 
 class InterruptTool(ToolProtocol):
 
@@ -18,7 +28,8 @@ class InterruptTool(ToolProtocol):
         """
 
     def wrapped_interrupt(self, state: SubgraphState) -> SubgraphState:
-        answer = interrupt(state["common_tool_input"]["args"])
+        args : InterruptArg = state["common_tool_input"]["args"]
+        answer = interrupt(args)
         state["nextNode"] = state["common_tool_input"]["nextNode"]
         state["common_tool_output"] = {
             "answer": answer
