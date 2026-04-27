@@ -6,7 +6,7 @@ Applies weighted scoring with confidence adjustments.
 Maps results to archetype matrix.
 Generates archetype narrative.
 """
-from typing import Dict, Literal, TypedDict
+from typing import Any, Dict, Literal, TypedDict
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langgraph.graph import END, START, StateGraph
@@ -33,6 +33,10 @@ class QuantumAnalyzerState(ToolState, total=False):
     # Archetype
     archetype: str
     archetype_narrative: str
+    skipped_questions: int
+    total_questions: int
+    skipped_ratio: float
+    scoring_warning: str
 
 class QuantumAnalyzerTool(ToolProtocol):
     """
@@ -45,6 +49,7 @@ class QuantumAnalyzerTool(ToolProtocol):
     """
     
     name = "quantum_analyzer"
+    SKIP_WARNING_RATIO = 0.30
     
     def __init__(self, model_gateway: ModelGateway):
         self._model_gateway = model_gateway
@@ -90,6 +95,7 @@ class QuantumAnalyzerTool(ToolProtocol):
             
             print(f"[ANALYZER] Calculating crypto risk score from {len(crypto_dims)} dimensions...")
             crypto_risk_score = 0.0
+            crypto_answered_weight = 0.0
             for dimension, weight in crypto_weights.items():
                 if dimension in crypto_dims:
                     dim_data = crypto_dims[dimension]
@@ -105,8 +111,12 @@ class QuantumAnalyzerTool(ToolProtocol):
                     
                     adjusted_score = (raw_score / 100.0) * confidence_multiplier
                     contribution = adjusted_score * weight * 100
-                    crypto_risk_score += contribution
+                    if self._is_dimension_answered(dim_data):
+                        crypto_risk_score += contribution
+                        crypto_answered_weight += weight
                     print(f"[ANALYZER]   {dimension}: {raw_score} (raw) * {confidence_multiplier} (confidence) * {weight} (weight) = {contribution:.1f}")
+            if crypto_answered_weight > 0:
+                crypto_risk_score = crypto_risk_score / crypto_answered_weight
             
             state["crypto_risk_score"] = crypto_risk_score
             print(f"[ANALYZER] Total crypto risk score: {crypto_risk_score:.1f}/100")
@@ -132,6 +142,7 @@ class QuantumAnalyzerTool(ToolProtocol):
             
             print(f"[ANALYZER] Calculating quantum opportunity score from {len(opp_dims)} dimensions...")
             quantum_opportunity_score = 0.0
+            opp_answered_weight = 0.0
             for dimension, weight in opportunity_weights.items():
                 if dimension in opp_dims:
                     dim_data = opp_dims[dimension]
@@ -147,8 +158,12 @@ class QuantumAnalyzerTool(ToolProtocol):
                     
                     adjusted_score = (raw_score / 100.0) * confidence_multiplier
                     contribution = adjusted_score * weight * 100
-                    quantum_opportunity_score += contribution
+                    if self._is_dimension_answered(dim_data):
+                        quantum_opportunity_score += contribution
+                        opp_answered_weight += weight
                     print(f"[ANALYZER]   {dimension}: {raw_score} (raw) * {confidence_multiplier} (confidence) * {weight} (weight) = {contribution:.1f}")
+            if opp_answered_weight > 0:
+                quantum_opportunity_score = quantum_opportunity_score / opp_answered_weight
             
             state["quantum_opportunity_score"] = quantum_opportunity_score
             print(f"[ANALYZER] Total quantum opportunity score: {quantum_opportunity_score:.1f}/100")
@@ -181,7 +196,10 @@ Context:
 - Crypto Risk Score: {crypto_risk_score:.1f}/100 ({state['crypto_risk_level']})
 - Quantum Opportunity Score: {quantum_opportunity_score:.1f}/100
 
-Be specific and actionable."""
+Tone rules:
+- Use cautious, advisory wording.
+- Avoid deterministic or absolute language.
+- Present this as an interpretation based on available responses."""
             
             narrative = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": narrative_prompt}],
@@ -235,6 +253,22 @@ Be specific and actionable."""
                             }
                         )
 
+            total_questions = len(crypto_weights) + len(opportunity_weights)
+            skipped_questions = 0
+            for dimension in crypto_weights:
+                if not self._is_dimension_answered(crypto_dims.get(dimension)):
+                    skipped_questions += 1
+            for dimension in opportunity_weights:
+                if not self._is_dimension_answered(opp_dims.get(dimension)):
+                    skipped_questions += 1
+            skipped_ratio = (skipped_questions / total_questions) if total_questions else 0.0
+            scoring_warning = None
+            if skipped_ratio >= self.SKIP_WARNING_RATIO:
+                scoring_warning = (
+                    f"{skipped_questions}/{total_questions} assessment topics were skipped "
+                    f"({skipped_ratio * 100:.0f}%). Interpret the results with caution."
+                )
+
             state["step_data"] = {
                 **step_data,
                 "crypto_risk_score": crypto_risk_score,
@@ -245,6 +279,10 @@ Be specific and actionable."""
                 "risk_breakdown": risk_breakdown,
                 "opportunity_breakdown": opportunity_breakdown,
                 "unknowns": unknowns,
+                "skipped_questions": skipped_questions,
+                "total_questions": total_questions,
+                "skipped_ratio": skipped_ratio,
+                "scoring_warning": scoring_warning,
             }
             
             # Mark tool as complete and expose canonical tool_result envelope.
@@ -264,3 +302,11 @@ Be specific and actionable."""
         g.add_edge(START, "analyze")
         g.add_edge("analyze", END)
         return g.compile()
+
+    def _is_dimension_answered(self, dim_data: Any) -> bool:
+        if not isinstance(dim_data, dict):
+            return False
+        details = str(dim_data.get("details", "")).strip().lower()
+        if details in {"", "no response", "no_response"}:
+            return False
+        return True

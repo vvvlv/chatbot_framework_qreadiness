@@ -33,3 +33,5 @@ yarn-error.log*
 
 # Cursor / misc
 .cursor/
+scripts/
+docker-compose.vm.yml

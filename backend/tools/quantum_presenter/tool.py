@@ -135,7 +135,12 @@ Return JSON:
         ...
     ],
     "next_step": "One concrete action for next 30 days"
-}}"""
+}}
+
+Tone rules:
+- Use cautious, advisory wording.
+- Avoid absolute claims like "must", "guaranteed", or "certainly".
+- Frame recommendations as suggested next steps based on available inputs."""
             
             try:
                 actions_response = await self._model_gateway.chat(
@@ -174,7 +179,11 @@ Benchmark context:
 Company: {step_data.get('user_industry', 'Unknown')}
 Current scores: Risk {step_data.get('crypto_risk_score', 0):.1f}, Opportunity {step_data.get('quantum_opportunity_score', 0):.1f}
 
-Provide specific timeline recommendations based on the benchmarks."""
+Provide specific timeline recommendations based on the benchmarks.
+
+Tone rules:
+- Keep language measured and non-deterministic.
+- Present timelines as indicative ranges, not certainties."""
             
             try:
                 timeline_response = await self._model_gateway.chat(
@@ -223,11 +232,19 @@ Provide specific timeline recommendations based on the benchmarks."""
         opp_breakdown = step_data.get("opportunity_breakdown", {})
         unknowns = step_data.get("unknowns", [])
         
+        warning_block = ""
+        if step_data.get("scoring_warning"):
+            warning_block = f"""
+⚠ Data completeness warning:
+   {step_data.get("scoring_warning")}
+"""
+
         report = f"""
 ────────────────────────────────────────────
 QUANTUM READINESS REPORT
 Company: {company} | Sector: {industry} | Date: {today}
 ────────────────────────────────────────────
+{warning_block}
 
 1. SCORES AT A GLANCE
    Cryptographic Risk Score:   {risk:.0f} / 100  {self._get_risk_emoji(step_data.get('crypto_risk_level', 'low'))} {step_data.get('crypto_risk_level', 'Low').title()} Risk
@@ -259,7 +276,7 @@ Company: {company} | Sector: {industry} | Date: {today}
         if unknowns:
             for item in unknowns[:3]:
                 dim = str(item.get("dimension", "unknown")).replace("_", " ").title()
-                report += f"   ⚠️ You were unsure about {dim} — {item.get('details', 'Requires follow-up')}\n"
+                report += f"   ⚠️ There is limited confidence for {dim} — {item.get('details', 'Requires follow-up')}\n"
         else:
             report += "   None detected. Confidence was medium/high across all dimensions.\n"
         
