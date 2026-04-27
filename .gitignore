@@ -35,4 +35,3 @@ yarn-error.log*
 .cursor/
 scripts/
 docker-compose.vm.yml
-docker-compose.yml
