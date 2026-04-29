@@ -42,6 +42,8 @@ class QuantumPresenterState(TypedDict, total=False):
     benchmark_documents: List[Dict]
     priority_actions: List[Dict]
     timeline_guidance: str
+    company_name: str
+    industry: str
     readiness_report: str
     next_step: str
 
@@ -87,7 +89,7 @@ class QuantumPresenterTool(SubgraphProtocol):
             {"tool_name": self.name, "total_steps": 1},
         )
 
-        stepData = {
+        stepData : QuantumPresenterState = {
             **(state["stepData"]),
             "benchmark_documents": None,
             "priority_actions": None,
@@ -103,9 +105,47 @@ class QuantumPresenterTool(SubgraphProtocol):
         state["pending_prompt_id"] = None
         state["common_tool_output"] = None
 
+        # Find company name and user industry from field "a_use_case_identification"
+        print(f"[PRESENTER] Retrieving user industry information...")
+        industry_prompt = f"""Based on the following user message, identify the company name and the industry of the user. Return "unknown" if the user doesn't contain the information needed.
+
+User message :
+{state['stepData'].get('user_industry', 'no user message')}
+
+Return JSON:
+{{
+"company_name": "<user company name>" or "unknown",
+"industry": "<user industry>" or "unknown"
+}}
+"""
+        try:
+            industry_response = await self._model_gateway.chat(
+                messages=[{"role": "user", "content": industry_prompt}],
+                temperature=0.3,
+            )
+            
+            # Try to parse JSON
+            if "{" in industry_response and "}" in industry_response:
+                json_start = industry_response.find("{")
+                json_end = industry_response.rfind("}") + 1
+                json_str = industry_response[json_start:json_end]
+                industry_result = json.loads(json_str)
+                state["stepData"]["industry"] = industry_result.get("industry", "unknown")
+                state["stepData"]["company_name"] = industry_result.get("company_name", "unknown")
+                print(f"[PRESENTER] ✓ Retrieved user's company name and industry")
+            else:
+                print(f"[PRESENTER] ⚠ Could not parse actions JSON from LLM response")
+                state["stepData"]["industry"] = "unknown"
+                state["stepData"]["company_name"] = "unknown"
+        except Exception as e:
+            print(f"[PRESENTER] ✗ Error finding user industry information: {e}")
+            traceback.print_exc()
+            state["stepData"]["industry"] = "unknown"
+            state["stepData"]["company_name"] = "unknown"
+
         # Retrieve benchmark documents via RAG
         print(f"[PRESENTER] Retrieving benchmark documents...")
-        benchmark_query = f"""Quantum computing timelines, roadmaps, and qubit estimates for {stepData.get('user_industry', 'general')} industry.
+        benchmark_query = f"""Quantum computing timelines, roadmaps, and qubit estimates for {state["stepData"].get('industry', 'unknown')} industry.
 Include NIST FIPS 203, CISA advisories, and GRI timeline reports."""
         args_rag = {
             "action": "retrieve",
@@ -150,7 +190,7 @@ Include NIST FIPS 203, CISA advisories, and GRI timeline reports."""
         actions_prompt = f"""Generate a prioritized action list for quantum readiness.
 
 Company context:
-- Industry: {state['stepData'].get('user_industry', 'Unknown')}
+- Industry: {state['stepData'].get('industry', 'Unknown')}
 - Archetype: {state['stepData'].get('archetype', 'Unknown')}
 
 Scores:
@@ -206,29 +246,31 @@ Return JSON:
             state["stepData"]["priority_actions"] = []
             state["stepData"]["next_step"] = ""
         
-        # Generate timeline guidance
+        # Generate timeline guidance # UNUSED FOR NOW
         print(f"[PRESENTER] Generating timeline guidance...")
         timeline_prompt = f"""Based on the benchmark documents and company context, provide timeline guidance.
 
 Benchmark context:
 {benchmark_context[:1000]}
 
-Company: {state['stepData'].get('user_industry', 'Unknown')}
+Company: 
+    - name : {state['stepData'].get('company_name', 'Unknown')}
+    - industry : {state['stepData'].get('industry', 'Unknown')}
 Current scores: Risk {state['stepData'].get('crypto_risk_score', 0):.1f}, Opportunity {state['stepData'].get('quantum_opportunity_score', 0):.1f}
 
 Provide specific timeline recommendations based on the benchmarks."""
         
-        try:
-            timeline_response = await self._model_gateway.chat(
-                messages=[{"role": "user", "content": timeline_prompt}],
-                temperature=0.3,
-            )
-            state["stepData"]["timeline_guidance"] = timeline_response.strip()
-            print(f"[PRESENTER] ✓ Timeline guidance generated")
-        except Exception as e:
-            print(f"[PRESENTER] ⚠ Error generating timeline: {e}")
-            state["stepData"]["timeline_guidance"] = "Timeline guidance unavailable."
-        
+        # try:
+        #     timeline_response = await self._model_gateway.chat(
+        #         messages=[{"role": "user", "content": timeline_prompt}],
+        #         temperature=0.3,
+        #     )
+        #     state["stepData"]["timeline_guidance"] = timeline_response.strip()
+        #     print(f"[PRESENTER] ✓ Timeline guidance generated")
+        # except Exception as e:
+        #     print(f"[PRESENTER] ⚠ Error generating timeline: {e}")
+        #     state["stepData"]["timeline_guidance"] = "Timeline guidance unavailable."
+
         # Generate final report
         print(f"[PRESENTER] Formatting final report...")
         state["stepData"]["readiness_report"] = self._format_report(state["stepData"])
@@ -247,7 +289,11 @@ Provide specific timeline recommendations based on the benchmarks."""
     def _format_report(self, step_data: Dict) -> str:
         """Format the final quantum readiness report."""
         company = step_data.get("company_name") or "Your Company"
-        industry = step_data.get("user_industry") or "Unknown Sector"
+        if company == "unknown":
+            company = "Your Company"
+        industry = step_data.get("industry") or "Unknown Sector"
+        if industry == "unknown":
+            industry = "Unknown Sector"
         today = date.today().isoformat()
         risk = step_data.get("crypto_risk_score", 0.0)
         opp = step_data.get("quantum_opportunity_score", 0.0)
@@ -262,6 +308,9 @@ Provide specific timeline recommendations based on the benchmarks."""
         risk_breakdown = step_data.get("risk_breakdown", {})
         opp_breakdown = step_data.get("opportunity_breakdown", {})
         unknowns = step_data.get("unknowns", [])
+        # unknowns_text = ""
+        # for item in unknowns:
+        #     unknowns_text += f"  ⚠️ You were unsure about {item["section"]} - {item["dimension"]}\n"
         
         report = f"""
 ────────────────────────────────────────────
