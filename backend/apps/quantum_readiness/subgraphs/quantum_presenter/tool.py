@@ -246,7 +246,7 @@ Return JSON:
             state["stepData"]["priority_actions"] = []
             state["stepData"]["next_step"] = ""
         
-        # Generate timeline guidance # UNUSED FOR NOW
+        # Generate timeline guidance # TODO : UNUSED FOR NOW
         print(f"[PRESENTER] Generating timeline guidance...")
         timeline_prompt = f"""Based on the benchmark documents and company context, provide timeline guidance.
 
@@ -307,47 +307,47 @@ Provide specific timeline recommendations based on the benchmarks."""
         narrative = step_data.get("archetype_narrative", "")
         risk_breakdown = step_data.get("risk_breakdown", {})
         opp_breakdown = step_data.get("opportunity_breakdown", {})
-        unknowns = step_data.get("unknowns", [])
+        unknowns = step_data.get("unknowns", []) # TODO : not in the report for now
         # unknowns_text = ""
         # for item in unknowns:
         #     unknowns_text += f"  ⚠️ You were unsure about {item["section"]} - {item["dimension"]}\n"
         
         report = f"""
-────────────────────────────────────────────
-QUANTUM READINESS REPORT
-Company: {company} | Sector: {industry} | Date: {today}
+────────────────────────────────────────────  
+**QUANTUM READINESS REPORT**  
+Company: {company} | Sector: {industry} | Date: {today}  
 ────────────────────────────────────────────
 
-1. SCORES AT A GLANCE
-   Branch A (Quantum Competitiveness):     {branch_a_score:.0f} / 100  📈 {branch_a_band}
-   Branch B (PQC Readiness):               {branch_b_score:.0f} / 100  🔐 {branch_b_band}
-   Derived Crypto Risk Exposure:           {risk:.0f} / 100  {self._get_risk_emoji(step_data.get('crypto_risk_level', 'low'))} {step_data.get('crypto_risk_level', 'Low').title()}
+1. **SCORES AT A GLANCE**  
+    - Branch A (Quantum Competitiveness):     {branch_a_score:.0f} / 100  📈 {branch_a_band}
+    - Branch B (PQC Readiness):               {branch_b_score:.0f} / 100  🔐 {branch_b_band}
+    - Derived Crypto Risk Exposure:           {risk:.0f} / 100  {self._get_risk_emoji(step_data.get('crypto_risk_level', 'low'))} {step_data.get('crypto_risk_level', 'Low').title()}
 
-2. YOUR ARCHETYPE
-   → "{archetype}"
+2. **YOUR ARCHETYPE**  
+   → "{archetype}"  
    {narrative}
 
-3. SCORE BREAKDOWN
-   Branch A (Quantum Competitiveness)
-   - Use Case Identification        {opp_breakdown.get('use_case_identification', {}).get('weighted_points', 0):>4.0f} / 35   {self._confidence_marker(opp_breakdown.get('use_case_identification', {}).get('confidence', 'low'))}
-   - Tech/Infrastructure Baseline   {opp_breakdown.get('technical_infrastructure_baseline', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('technical_infrastructure_baseline', {}).get('confidence', 'low'))}
-   - Strategic/Org Maturity         {opp_breakdown.get('strategic_organizational_maturity', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('strategic_organizational_maturity', {}).get('confidence', 'low'))}
-   - Roadmap & Ecosystem            {opp_breakdown.get('roadmap_ecosystem', {}).get('weighted_points', 0):>4.0f} / 15   {self._confidence_marker(opp_breakdown.get('roadmap_ecosystem', {}).get('confidence', 'low'))}
-   Branch B (Cryptographic Risk & PQ Security)
-   - Data & Exposure Profile        {risk_breakdown.get('data_exposure_profile', {}).get('weighted_points', 0):>4.0f} / 35   {self._confidence_marker(risk_breakdown.get('data_exposure_profile', {}).get('confidence', 'low'))}
-   - Migration Readiness            {risk_breakdown.get('migration_readiness', {}).get('weighted_points', 0):>4.0f} / 30   {self._confidence_marker(risk_breakdown.get('migration_readiness', {}).get('confidence', 'low'))}
-   - Supply Chain & Ecosystem       {risk_breakdown.get('supply_chain_ecosystem', {}).get('weighted_points', 0):>4.0f} / 20   {self._confidence_marker(risk_breakdown.get('supply_chain_ecosystem', {}).get('confidence', 'low'))}
-   - Governance                     {risk_breakdown.get('governance', {}).get('weighted_points', 0):>4.0f} / 15   {self._confidence_marker(risk_breakdown.get('governance', {}).get('confidence', 'low'))}
+3. **SCORE BREAKDOWN**  
+    1. Branch A (Quantum Competitiveness)
+        - Use Case Identification        {opp_breakdown.get('use_case_identification', {}).get('weighted_points', 0):>4.0f} / 35   {self._confidence_marker(opp_breakdown.get('use_case_identification', {}).get('confidence', 'low'))}
+        - Tech/Infrastructure Baseline   {opp_breakdown.get('technical_infrastructure_baseline', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('technical_infrastructure_baseline', {}).get('confidence', 'low'))}
+        - Strategic/Org Maturity         {opp_breakdown.get('strategic_organizational_maturity', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('strategic_organizational_maturity', {}).get('confidence', 'low'))}
+        - Roadmap & Ecosystem            {opp_breakdown.get('roadmap_ecosystem', {}).get('weighted_points', 0):>4.0f} / 15   {self._confidence_marker(opp_breakdown.get('roadmap_ecosystem', {}).get('confidence', 'low'))}
+    2. Branch B (Cryptographic Risk & PQ Security)
+        - Data & Exposure Profile        {risk_breakdown.get('data_exposure_profile', {}).get('weighted_points', 0):>4.0f} / 35   {self._confidence_marker(risk_breakdown.get('data_exposure_profile', {}).get('confidence', 'low'))}
+        - Migration Readiness            {risk_breakdown.get('migration_readiness', {}).get('weighted_points', 0):>4.0f} / 30   {self._confidence_marker(risk_breakdown.get('migration_readiness', {}).get('confidence', 'low'))}
+        - Supply Chain & Ecosystem       {risk_breakdown.get('supply_chain_ecosystem', {}).get('weighted_points', 0):>4.0f} / 20   {self._confidence_marker(risk_breakdown.get('supply_chain_ecosystem', {}).get('confidence', 'low'))}
+        - Governance                     {risk_breakdown.get('governance', {}).get('weighted_points', 0):>4.0f} / 15   {self._confidence_marker(risk_breakdown.get('governance', {}).get('confidence', 'low'))}
 
-4. WHERE TO FOCUS NEXT
-   You are currently positioned as "{branch_a_band}" on quantum competitiveness and "{branch_b_band}" on cryptographic readiness.
-   Your most important focus areas are:
-   - Quantum Competitiveness: {branch_a_focus or 'Define focused pilots and decision milestones.'}
-   - Cryptographic Readiness: {branch_b_focus or 'Prioritize inventory, migration planning, and governance.'}
+4. **WHERE TO FOCUS NEXT**  
+   You are currently positioned as "{branch_a_band}" on quantum competitiveness and "{branch_b_band}" on cryptographic readiness.  
+   Your most important focus areas are:  
+   - Quantum Competitiveness: {branch_a_focus or 'Define focused pilots and decision milestones.'}  
+   - Cryptographic Readiness: {branch_b_focus or 'Prioritize inventory, migration planning, and governance.'}  
    If you want a practical action plan, the Roadmap Chatbot can translate these priorities into concrete next steps and timeline options.
 """
         
-        report += "────────────────────────────────────────────\n"
+        report += "  \n────────────────────────────────────────────\n"
         
         return report
 

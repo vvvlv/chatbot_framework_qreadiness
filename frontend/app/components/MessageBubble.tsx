@@ -1,6 +1,7 @@
 'use client';
 
 import { Message } from '../types';
+import { marked } from 'marked';
 
 interface MessageBubbleProps {
   message: Message;
@@ -19,7 +20,10 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
             : "border border-slate-700/80 bg-slate-900/90 text-slate-100"
         } ${isStreaming ? "opacity-70" : ""}`}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        <span
+          className="prose prose-invert prose-sm max-w-none"
+          dangerouslySetInnerHTML={{ __html: marked(message.content) }}
+        />
         {isStreaming && (
           <span className="inline-block w-2 h-2 bg-current rounded-full animate-pulse ml-1" />
         )}
