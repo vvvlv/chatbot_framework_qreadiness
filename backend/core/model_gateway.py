@@ -61,4 +61,3 @@ class ModelGateway:
                 "LLM call failed; using a generic narrative instead. "
                 "Check LiteLLM configuration if you want richer text here."
             )
-

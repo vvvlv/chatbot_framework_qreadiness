@@ -136,6 +136,9 @@ class QuantumDataCollectorTool(SubgraphProtocol):
     ]
     TOTAL_STEPS = 8
     MAX_RETRIES_PER_FIELD = 2
+    SYSTEM_PROMPT = """
+
+"""
     
     def __init__(self, model_gateway: ModelGateway, interrupt_tool: ToolProtocol):
         self._model_gateway = model_gateway

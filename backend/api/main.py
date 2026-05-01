@@ -25,7 +25,7 @@ from common_tools.Interrupt_tool import InterruptTool
 from common_tools.RAG_tool import RAGTool
 
 # Apps main graphs (Layer 2)
-from apps.quantum_readiness.maingraph import QuantumReadinessSubgraph
+from apps.quantum_readiness_v2.maingraph import QuantumReadinessSubgraph
 
 app = FastAPI(title="Universal Chatbot Framework - Quantum Readiness")
 
