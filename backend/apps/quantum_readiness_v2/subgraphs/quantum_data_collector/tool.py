@@ -52,6 +52,7 @@ class QuantumDataCollectorState(TypedDict, total=False):
     pending_question: Optional[str]
     consumed_prompt_ids: List[str]
     last_validation_reason: Optional[str]
+    step: int
 
 class QuantumDataCollectorTool(SubgraphProtocol):
     """
@@ -239,6 +240,7 @@ Don't forget that you want to get as much information as possible in as few mess
             "user_command": None,
             "current_field_key": "a_use_case_identification",
             "context_summary": summary,
+            "step": 0,
         }
 
         state["currentStep"] = "collecting"
@@ -361,11 +363,13 @@ If the user strays too far from the topic, remind them that you are here to asse
 
         if command == "/cancel":
             state["error"] = "Tool cancelled by user."
+            state["output"] = "Understood. The conversation has been ended. If you'd like to start a new session or need any assistance, don't hesitate to reach out."
             state["currentStep"] = "Idle"
             state["stepData"] = {}
             state["common_tool_input"] = {}
             state["common_tool_output"] = {}
             state["pending_prompt_id"] = None
+            await adispatch_custom_event("tool_complete", {"tool_name": self.name}) # TODO : change args of dispatched event
             state["nextNode"] = END
             return state
         

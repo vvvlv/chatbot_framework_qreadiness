@@ -62,6 +62,14 @@ export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatIn
           >
             Clarify
           </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSend("/cancel", currentQuestion?.prompt_id)}
+            className="rounded-full border border-red-500/50 px-3 py-1 text-red-200 hover:bg-red-500/10 disabled:opacity-50"
+          >
+            Cancel
+          </button>
         </div>
       )}
       <form onSubmit={handleSubmit} className="flex gap-2">
