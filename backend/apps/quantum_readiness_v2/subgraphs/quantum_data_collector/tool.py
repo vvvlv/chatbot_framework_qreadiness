@@ -237,8 +237,12 @@ Don't forget that you want to get as much information as possible in as few mess
         if state["stepData"].get("pending_question") != None:
             question = state["stepData"]["pending_question"]
             print(f"[DATA_COLLECTOR] DEBUG - pending question : {question}")
+        # The following section should be executed only after init and in case of /skip or /clarify
         else:
             information_status = self._write_information_status(state["stepData"])
+            extraRules = ""
+            if state["stepData"]["iterations_count"][state['stepData'].get('current_field_key')] == self.MAX_RETRIES_PER_FIELD - 1:
+                extraRules = "It is your last question to obtain information about the current field."
             if state["stepData"].get("last_user_answer", None) == None:
                 system_message = f"""
 INFORMATION STATUS :
@@ -247,9 +251,7 @@ INFORMATION STATUS :
 
 CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
 
-MESSAGE COUNT (User + Assistant) : {state['stepData'].get('message_count', 'unknown')}
-
-INSTRUCTION : generate a question to get more information from the user about the current field.
+INSTRUCTION : generate a question to get more information from the user about the current field. {extraRules}
 """
             else:
                 system_message = f"""
@@ -259,15 +261,12 @@ INFORMATION STATUS :
 
 CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
 
-MESSAGE COUNT (User + Assistant) : {state['stepData'].get('message_count', 'unknown')}
-
-LAST USER MESSAGE : {state['stepData'].get('last_user_answer', 'no user message')}
-
-INSTRUCTION : Generate a message based on your system prompt, the last user message and the message history.
+INSTRUCTION : Generate an answer for the user based on your system prompt, the last user answer and the message history. {extraRules}
 If the user strays too far from the topic, remind them that you are here to assess their quantum readiness and offer them to cancel the procedure if they want.
 """
+            print(f"[DATA_COLLECTOR] DEBUG - system message : {system_message}")
             state["stepData"]["messages"].append({"role": "system", "content": system_message})
-            llm_messages = [{"role": "system", "content": self.SYSTEM_PROMPT}] + [{"role": "assistant", "content": state["stepData"]["context_summary"]}] + state["stepData"]["messages"][-5:]
+            llm_messages = [{"role": "system", "content": self.SYSTEM_PROMPT}] + [{"role": "assistant", "content": state["stepData"]["context_summary"]}] + state["stepData"]["messages"][-6:]
             question = await self._model_gateway.chat(
                 messages= llm_messages,
                 model=self.VALIDATOR_MODEL,
@@ -303,6 +302,7 @@ If the user strays too far from the topic, remind them that you are here to asse
         else:
             raw_answer = str(answer or "").strip()
         state["stepData"]["last_user_answer"] = raw_answer
+        state["stepData"]["messages"].append({"role": "user", "content": raw_answer})
         if resume_prompt_id and resume_prompt_id != prompt_id:
             print(f"[DATA_COLLECTOR] DEBUG - Stale prompt answer received.")
             state["stepData"]["last_validation_reason"] = "Stale prompt answer received."
@@ -360,7 +360,7 @@ If the user strays too far from the topic, remind them that you are here to asse
         # Clarification request -> generate clarification message and re-ask.
         if command == "/clarify":
             state["pending_prompt_id"] = None
-            state["stepData"]["last_user_answer"] = "Can you clarify your last message ?"
+            state["stepData"]["last_user_answer"] = "I did not understand your message. Could you explain it in more details ?"
             state["stepData"]["iterations_count"][field_key] += 1
             state["nextNode"] = "generate_question"
             return state
@@ -374,100 +374,10 @@ If the user strays too far from the topic, remind them that you are here to asse
 
         current_field = state['stepData']['current_field_key']
         information_status = self._write_information_status(state["stepData"])
-        main_prompt = f"""
-Your task now is to extract relevant information from the user answer in order to fill the 4 quantum readiness fields described in your system prompt.
-
-Here is a summary of the information already extracted for each field :
-
-{information_status}
-
-The field currently being discussed in the conversation is : {current_field}
-
-Your last message was : {state['stepData']['messages'][-1]["content"]}
-
-The user answered : {state['stepData']['last_user_answer']}
-"""
-        
-        # Task 1
-        task1_prompt = "Extract relevant information for the current field from the user answer, based on the current field attributes. If there is no relevant information, just return 'no information'. Do not include markdown, code fences, or extra keys."
-        step_messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
-            {"role": "system", "content": main_prompt},
-            {"role": "system", "content": task1_prompt}
-        ]
-        raw = await self._model_gateway.chat(
-            messages=step_messages,
-            model=self.VALIDATOR_MODEL,
-            temperature=0.2,
-        )
-        text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 1 : {text}")
-
-        # Task 2
-        task2_prompt = f"""Merge the information you found ({text}) with the already extracted information of the current field ({state['stepData']['field_information'][current_field]}) into a single text summary.
-Do not include markdown, code fences, or extra keys.
-"""
-        step_messages += [
-            {"role": "assistant", "content": text},
-            {"role": "system", "content": task2_prompt}
-        ]
-        raw = await self._model_gateway.chat(
-            messages=step_messages,
-            model=self.VALIDATOR_MODEL,
-            temperature=0.2,
-        )
-        text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 2 : {text}")
-        state["stepData"]["field_information"][current_field] = text
-
-        # Task 3
-        output3_format = {
+        output_format = {
             "type": "object",
             "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["empty", "in_progress", "complete"]
-                }
-            }
-        }
-        task3_prompt = f"""Based on the new information summary for the current field and the answer criteria of the current field,
-indicate wether the current field is 'empty' (no user information extracted for this field), 'in_progress' (some user information but not enough) or 'complete' (there is enough user information for this field).
-Output STRICT JSON with this schema:
-{output3_format}
-"""
-        step_messages += [
-            {"role": "assistant", "content": text},
-            {"role": "system", "content": task3_prompt}
-        ]
-        raw = await self._model_gateway.chat(
-            messages=step_messages,
-            model=self.VALIDATOR_MODEL,
-            temperature=0.1,
-        )
-        text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 3 : {text}")
-        try:
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            data = json.loads(text[start:end])
-            status = data.get("status")
-            if status and (status == "complete" or (status == "in_progress" and state["stepData"]["field_status"][current_field] != "complete")):
-                state["stepData"]["field_status"][current_field] = status
-                state["stepData"]["iterations_count"][current_field] += 1
-                if state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
-                    state["stepData"]["field_status"][current_field] = "complete"
-        except Exception:
-            # Fail-safe: treat as incomplete
-            print("[DATA_COLLECTOR] DEBUG - Parsing of task 3 output has failed.")
-            state["stepData"]["iterations_count"][current_field] += 1
-            if state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
-                state["stepData"]["field_status"][current_field] = "complete"
-        
-        # Task 4
-        output4_format = {
-            "type": "object",
-            "properties": {
-                "list": {
+                "update_fields": {
                     "type": "array",
                     "items": {
                         "type": "object",
@@ -485,53 +395,85 @@ Output STRICT JSON with this schema:
                         },
                         "required": ["key", "new_information_summary", "new_status"]
                     }
+                },
+                "next_message": {
+                    "type": "string",
                 }
             },
-            "required": ["list"]
+            "required": ["update_fields", "next_message"]
         }
-        task4_prompt = f"""Based on the fields specifications, determine if the user answer contains relevant information for some fields other than the current field.
-Update the information summary of the concerned fields with the user answer.
-Compare the new information summary of the concerned fields with their answer criteria. For each field, if there is enough information, set the field status to "complete". If there is not enough information and the field was "empty", set the field status to "in_progress"
-Return the list of the concerned fields, with their key, their new information summary and their new status.
+        extraRules = ""
+        if state["stepData"]["iterations_count"][current_field] == self.MAX_RETRIES_PER_FIELD - 1:
+            extraRules = "It is your last question to obtain information about the current field."
+        main_prompt = f"""
+Your task now is to extract relevant information from the user answer in order to fill the 4 quantum readiness fields described in your system prompt.
+
+Here is a summary of the information already extracted for each field :
+
+{information_status}
+
+The field currently being discussed in the conversation is : {current_field}
+
+Your last message was : {state['stepData']['messages'][-1]["content"]}
+
+The user answered : {state['stepData']['last_user_answer']}
+
+Your instructions are the following :
+1- Extract relevant information for the current field from the user answer, based on the current field attributes.
+2- Merge the information you found during the first instruction with the already extracted information of the current field ('{state['stepData']['field_information'][current_field]}') into a single text summary.
+3- Based on the new information summary for the current field and the answer criteria of the current field, indicate wether the current field is 'empty' (no user information extracted for this field), 'in_progress' (some user information but not enough) or 'complete' (there is enough user information for this field).
+4- Do the 3 steps above for each uncomplete field.
+5- Sum it up into a list of updates for each field.
+6- Generate a message based on your system prompt, the last user message and the message history. {extraRules}
+
 Output STRICT JSON with this schema:
-{output4_format}
+{output_format}
 """
-        step_messages += [
-            {"role": "assistant", "content": text},
-            {"role": "system", "content": task4_prompt}
-        ]
+        state["stepData"]["messages"].append({"role": "system", "content": main_prompt})
+        step_messages = [{"role": "system", "content": self.SYSTEM_PROMPT}] + [{"role": "assistant", "content": state["stepData"]["context_summary"]}] + state["stepData"]["messages"][-5:]
         raw = await self._model_gateway.chat(
             messages=step_messages,
             model=self.VALIDATOR_MODEL,
             temperature=0.2,
         )
         text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 4 : {text}")
+        print(f"[DATA_COLLECTOR] DEBUG - Output AI : {text}")
         try:
             start = text.find("{")
             end = text.rfind("}") + 1
             data = json.loads(text[start:end])
-            data_list = data.get("list")
+            data_list = data.get("update_fields")
+            question = data.get("next_message") or "Fallback question : to write"
             for item in data_list:
-                if item.get("key") != current_field and state["stepData"]["field_status"].get(item.get("key")) != "complete":
+                if state["stepData"]["field_status"].get(item.get("key")) != "complete":
                     state["stepData"]["field_status"][item.get("key")] = (item.get("new_status") or state["stepData"]["field_status"][item.get("key")])
                     state["stepData"]["field_information"][item.get("key")] = (item.get("new_information_summary") or state["stepData"]["field_information"][item.get("key")])
+            state["stepData"]["messages"].append({"role": "assistant", "content": question})
+            state["stepData"]["pending_question"] = question
+            state["stepData"]["message_count"] += 1
         except Exception:
-            # Fail-safe: no update on other fields
-            print("[DATA_COLLECTOR] DEBUG - Parsing of task 4 output has failed.")
+            # Fail-safe: no update on fields
+            print("[DATA_COLLECTOR] DEBUG - Parsing of AI output has failed.")
+            question = "Fallback question : to write"
+            state["stepData"]["messages"].append({"role": "assistant", "content": question})
+            state["stepData"]["pending_question"] = question
+            state["stepData"]["message_count"] += 1
 
         # Determine next step
+        state["stepData"]["iterations_count"][current_field] += 1
+        if state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
+            state["stepData"]["field_status"][current_field] = "complete"
         state["pending_prompt_id"] = None
         if state["stepData"]["field_status"][current_field] == "complete":
             next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
             if next_field == None:
-                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS})
                 state["nextNode"] = "before_analyzer"
                 self._log_model_quality_debug(state=state, current_field=current_field)
                 return state
             state["stepData"]["current_field_key"] = next_field
             state["stepData"]["step"] = step
-            await adispatch_custom_event("tool_progress", {"step": step, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+            await adispatch_custom_event("tool_progress", {"step": step, "total": self.TOTAL_STEPS})
         self._log_model_quality_debug(state=state, current_field=current_field)
         state["nextNode"] = "generate_question"
         return state
