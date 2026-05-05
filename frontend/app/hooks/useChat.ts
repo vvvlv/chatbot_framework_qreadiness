@@ -61,13 +61,13 @@ export function useChat(sessionId: string) {
         seenQuestionPromptIdsRef.current.clear();
         lastQuestionTextRef.current = null;
         setToolMeta({
-          name: event.meta.active_tool || "unknown",
-          total: event.meta.tool_total || 0,
+          name: event.payload.tool_name || "unknown",
+          total: event.payload.total_steps || 0,
           step: 0,
         });
         break;
 
-      case "tool_question":
+      case "tool_question": 
         {
           const questionText = String(event.payload.text || "").trim();
           const promptId = event.payload.prompt_id || event.meta.pending_prompt_id || undefined;
@@ -93,14 +93,12 @@ export function useChat(sessionId: string) {
         setUIState("awaiting_input");
         setCurrentQuestion({
           text: event.payload.text,
-          step: event.payload.step || event.meta.tool_step || 0,
           prompt_id: event.payload.prompt_id || event.meta.pending_prompt_id || undefined,
           input_type: event.payload.input_type || "free_text",
           options: event.payload.options,
           min: event.payload.min,
           max: event.payload.max,
         });
-        setToolMeta((prev) => prev ? { ...prev, step: event.payload.step || event.meta.tool_step || 0 } : prev);
         break;
 
       case "tool_waiting_input":

@@ -35,7 +35,6 @@ export interface ToolMeta {
 
 export interface QuestionEvent {
   text: string;
-  step: number;
   prompt_id?: string;
   input_type: "free_text" | "choice" | "number" | "date" | "confirm";
   options?: string[];

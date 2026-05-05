@@ -3,13 +3,15 @@
 import { ToolMeta } from '../types';
 
 interface ToolChromeProps {
-  toolMeta: ToolMeta;
+  toolMeta: ToolMeta | null;
   onCancel: () => void;
   visible: boolean;
 }
 
 export function ToolChrome({ toolMeta, onCancel, visible }: ToolChromeProps) {
   if (!visible) return null;
+
+  if (!toolMeta) return null;
 
   const progress = toolMeta.total > 0 ? (toolMeta.step / toolMeta.total) * 100 : 0;
 
@@ -32,12 +34,6 @@ export function ToolChrome({ toolMeta, onCancel, visible }: ToolChromeProps) {
             />
           </div>
         </div>
-        <button
-          onClick={onCancel}
-          className="ml-4 px-3 py-1 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded border border-red-300 dark:border-red-700"
-        >
-          Cancel
-        </button>
       </div>
     </div>
   );

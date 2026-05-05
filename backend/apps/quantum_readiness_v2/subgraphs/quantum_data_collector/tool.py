@@ -344,16 +344,17 @@ If the user strays too far from the topic, remind them that you are here to asse
         if command == "/skip":
             state["stepData"]["field_status"][field_key] = "complete"
             state["stepData"]["field_information"][field_key] += "The user skipped aditional data collection for this field."
-            next_field = self._next_unfilled_key(state["stepData"]["field_status"])
+            next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
             state["pending_prompt_id"] = None
             state["stepData"]["last_user_answer"] = None
             if next_field == None:
-                await adispatch_custom_event("tool_progress", {"step": 1, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
                 state["nextNode"] = "before_analyzer"
                 return state
             state["stepData"]["current_field_key"] = next_field
+            state["stepData"]["step"] = step
             state["nextNode"] = "generate_question"
-            await adispatch_custom_event("tool_progress", {"step": 1, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+            await adispatch_custom_event("tool_progress", {"step": step, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
             return state
         
         # Clarification request -> generate clarification message and re-ask.
@@ -522,14 +523,15 @@ Output STRICT JSON with this schema:
         # Determine next step
         state["pending_prompt_id"] = None
         if state["stepData"]["field_status"][current_field] == "complete":
-            next_field = self._next_unfilled_key(state["stepData"]["field_status"])
+            next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
             if next_field == None:
-                await adispatch_custom_event("tool_progress", {"step": 1, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
                 state["nextNode"] = "before_analyzer"
                 self._log_model_quality_debug(state=state, current_field=current_field)
                 return state
             state["stepData"]["current_field_key"] = next_field
-            await adispatch_custom_event("tool_progress", {"step": 1, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+            state["stepData"]["step"] = step
+            await adispatch_custom_event("tool_progress", {"step": step, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
         self._log_model_quality_debug(state=state, current_field=current_field)
         state["nextNode"] = "generate_question"
         return state
@@ -564,10 +566,10 @@ Output STRICT JSON with this schema:
         return None
     
     def _next_unfilled_key(self, field_status: Dict[str, str]) -> Optional[str]:
-        for field in self.FIELD_SPECS:
-            if field_status[field["key"]] != "complete":
-                return field["key"]
-        return None
+        for i in range(len(self.FIELD_SPECS)):
+            if field_status[self.FIELD_SPECS[i]["key"]] != "complete":
+                return self.FIELD_SPECS[i]["key"], i
+        return None, None
 
     def _write_information_status(self, stepData: QuantumDataCollectorState) -> str:
         complete_fields_str = "Complete or skipped fields (No more information needed) :"

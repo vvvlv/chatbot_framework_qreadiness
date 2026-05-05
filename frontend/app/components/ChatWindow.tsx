@@ -3,6 +3,7 @@
 import { useChat } from '../hooks/useChat';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
+import { ToolChrome } from './ToolChrome';
 import { useState, useEffect } from 'react';
 
 export function ChatWindow() {
@@ -52,16 +53,16 @@ export function ChatWindow() {
 
     // Analyzer/presenter phases belong to the final report stage.
     if (toolMeta.name === "quantum_analyzer" || toolMeta.name === "quantum_presenter") {
-      return 3;
+      return 2;
     }
 
-    const currentToolStep = currentQuestion?.step ?? toolMeta?.step ?? 0;
+    const currentToolStep = toolMeta?.step ?? 0;
     if (toolMeta) {
       const total = Math.max(1, toolMeta.total || 1);
       if (currentToolStep <= 0) return 1;
       if (currentToolStep <= total) return 1;
     }
-    return 2;
+    return 1;
   })();
 
   const theme = [
@@ -138,6 +139,8 @@ export function ChatWindow() {
             );
           })}
         </div>
+
+        <ToolChrome toolMeta={toolMeta} onCancel={() => send("/cancel", currentQuestion?.prompt_id)} visible={activeStep === 1} />
       </header>
 
       {/* Messages */}
