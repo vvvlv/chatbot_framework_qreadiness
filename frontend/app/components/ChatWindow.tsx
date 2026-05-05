@@ -37,7 +37,6 @@ export function ChatWindow() {
   const steps = [
     "Welcome",
     "Quantum Competitiveness",
-    "Cryptographic Risk & Post-Quantum Security",
     "Report",
   ] as const;
 
@@ -48,7 +47,7 @@ export function ChatWindow() {
     );
     if (!toolMeta) {
       // Avoid flashing "completed" before tool_start arrives.
-      return hasFinalReport ? 3 : 1;
+      return hasFinalReport ? 2 : 1;
     }
 
     // Analyzer/presenter phases belong to the final report stage.
@@ -59,12 +58,10 @@ export function ChatWindow() {
     const currentToolStep = currentQuestion?.step ?? toolMeta?.step ?? 0;
     if (toolMeta) {
       const total = Math.max(1, toolMeta.total || 1);
-      const branchASteps = Math.ceil(total / 2);
       if (currentToolStep <= 0) return 1;
-      if (currentToolStep <= branchASteps) return 1;
-      if (currentToolStep <= total) return 2;
+      if (currentToolStep <= total) return 1;
     }
-    return 3;
+    return 2;
   })();
 
   const theme = [
@@ -79,12 +76,6 @@ export function ChatWindow() {
       accent: "bg-indigo-500",
       ring: "ring-indigo-600/40",
       text: "text-indigo-200",
-    },
-    {
-      shell: "from-cyan-950 via-slate-900 to-slate-950",
-      accent: "bg-cyan-500",
-      ring: "ring-cyan-600/40",
-      text: "text-cyan-200",
     },
     {
       shell: "from-emerald-950 via-slate-900 to-slate-950",
@@ -117,7 +108,7 @@ export function ChatWindow() {
           Assess your company's quantum readiness through a structured conversational workflow
         </p>
 
-        <div className="mt-4 grid grid-cols-4 gap-2">
+        <div className="mt-4 grid grid-cols-3 gap-2">
           {steps.map((step, index) => {
             const isActive = index === activeStep;
             const isDone = index < activeStep;

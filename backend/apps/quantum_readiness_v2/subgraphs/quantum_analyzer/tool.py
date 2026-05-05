@@ -7,7 +7,7 @@ Maps results to archetype matrix.
 Generates archetype narrative.
 """
 import json
-from typing import Any, Dict, Literal, TypedDict
+from typing import Any, Dict, TypedDict
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langgraph.graph import END, START, StateGraph
@@ -23,11 +23,6 @@ class QuantumAnalyzerState(TypedDict, total=False):
     # Input data (from data collector)
     user_industry: str
     branch_a_topics: Dict
-    branch_b_topics: Dict
-    
-    # Output scores
-    crypto_risk_score: float  # 0-100
-    crypto_risk_level: Literal["low", "medium", "high", "critical"]
     quantum_opportunity_score: float  # 0-100
     
     # Archetype
@@ -69,9 +64,6 @@ class QuantumAnalyzerTool(SubgraphProtocol):
         stepData : QuantumAnalyzerState = {
             "user_industry": state["stepData"]["user_industry"],
             "branch_a_topics": state["stepData"]["branch_a_topics"],
-            "branch_b_topics": state["stepData"]["branch_b_topics"],
-            "crypto_risk_score": None,
-            "crypto_risk_level": None,
             "quantum_opportunity_score": None,
             "archetype": None,
             "archetype_narrative": None,
@@ -101,63 +93,35 @@ class QuantumAnalyzerTool(SubgraphProtocol):
         """
         
         branch_a_topics = state["stepData"].get("branch_a_topics", {}) or {}
-        branch_b_topics = state["stepData"].get("branch_b_topics", {}) or {}
-
         branch_a_weights = {
             "use_case_identification": 35,
             "technical_infrastructure_baseline": 25,
             "strategic_organizational_maturity": 25,
             "roadmap_ecosystem": 15,
         }
-        branch_b_weights = {
-            "data_exposure_profile": 35,
-            "migration_readiness": 30,
-            "supply_chain_ecosystem": 20,
-            "governance": 15,
-        }
 
         branch_a_result = await self._score_branch("Branch A", branch_a_topics, branch_a_weights)
-        branch_b_result = await self._score_branch("Branch B", branch_b_topics, branch_b_weights)
-
         branch_a_score = float(branch_a_result["total"])
-        branch_b_score = float(branch_b_result["total"])
-
-        # Compatibility mapping:
         quantum_opportunity_score = branch_a_score
-        crypto_risk_score = 100.0 - branch_b_score  # Branch B high => lower risk exposure
         state["stepData"]["quantum_opportunity_score"] = quantum_opportunity_score
-        state["stepData"]["crypto_risk_score"] = crypto_risk_score
         print(f"[ANALYZER] Branch A score: {branch_a_score:.1f}")
-        print(f"[ANALYZER] Branch B score: {branch_b_score:.1f}")
 
-        # Preserve existing risk-level semantics for compatibility.
-        if crypto_risk_score >= 70:
-            state["stepData"]["crypto_risk_level"] = "critical"
-        elif crypto_risk_score >= 50:
-            state["stepData"]["crypto_risk_level"] = "high"
-        elif crypto_risk_score >= 30:
-            state["stepData"]["crypto_risk_level"] = "medium"
-        else:
-            state["stepData"]["crypto_risk_level"] = "low"
-        print(f"[ANALYZER] Derived risk level: {state['stepData']['crypto_risk_level']}")
-        
-        # Map to archetype (2x2 matrix)
-        risk_high = crypto_risk_score >= 50
-        opportunity_high = quantum_opportunity_score >= 50
-        
-        print(f"[ANALYZER] Mapping to archetype - risk_high: {risk_high}, opportunity_high: {opportunity_high}")
-        
-        if risk_high and opportunity_high:
+        if quantum_opportunity_score >= 70:
             archetype = "Act Now + Explore"
-        elif risk_high and not opportunity_high:
-            archetype = "Act Now + Secure"
-        elif not risk_high and opportunity_high:
-            archetype = "Wait + Explore"
+        elif quantum_opportunity_score >= 50:
+            archetype = "Prepare + Explore"
         else:
-            archetype = "Wait + Monitor"
+            archetype = "Build Foundations"
         
         state["stepData"]["archetype"] = archetype
         print(f"[ANALYZER] Determined archetype: {archetype}")
+        self._log_model_quality_debug_analyzer(
+            branch_a_topics=branch_a_topics,
+            branch_a_weights=branch_a_weights,
+            branch_a_result=branch_a_result,
+            branch_a_score=branch_a_score,
+            archetype=archetype,
+        )
         
         # Generate archetype narrative
         print(f"[ANALYZER] Generating archetype narrative...")
@@ -168,8 +132,6 @@ Context:
 - Company: {state['stepData'].get('company_name', 'Unknown')}
 - Industry: {state['stepData'].get('user_industry', 'Unknown')}
 - Branch A (Quantum Competitiveness): {branch_a_score:.1f}/100
-- Branch B (PQC Readiness): {branch_b_score:.1f}/100
-- Derived crypto risk exposure: {crypto_risk_score:.1f}/100 ({state['stepData']['crypto_risk_level']})
 
 Be specific and actionable."""
         
@@ -182,15 +144,6 @@ Be specific and actionable."""
         print(f"[ANALYZER] ✓ Analysis complete - archetype: {archetype}")
         
         # Store results in step_data for presenter tool
-        risk_breakdown = {
-            topic: {
-                "weighted_points": float(data["score"]),
-                "weight_points": int(data["max_score"]),
-                "raw_score": float(data["score"]),
-                "confidence": data["confidence"],
-            }
-            for topic, data in branch_b_result["topic_scores"].items()
-        }
         opportunity_breakdown = {
             topic: {
                 "weighted_points": float(data["score"]),
@@ -203,7 +156,6 @@ Be specific and actionable."""
 
         unknowns = []
         for section_name, section in (
-            ("branch_b", branch_b_result["topic_scores"]),
             ("branch_a", branch_a_result["topic_scores"]),
         ):
             for dim_name, dim_data in section.items():
@@ -219,10 +171,7 @@ Be specific and actionable."""
         step_data = {
             **(state["stepData"]),
             "branch_a_score": branch_a_score,
-            "branch_b_score": branch_b_score,
             "branch_a_band": self._branch_a_band(branch_a_score),
-            "branch_b_band": self._branch_b_band(branch_b_score),
-            "risk_breakdown": risk_breakdown,
             "opportunity_breakdown": opportunity_breakdown,
             "unknowns": unknowns,
         }
@@ -259,15 +208,16 @@ Topics with weights and answers:
 {json.dumps([{"topic": k, "max_score": w, "answer": topics.get(k)} for k, w in weights.items()], ensure_ascii=False)}
 """
         parsed_scores: Dict[str, Dict[str, Any]] = {}
+        raw_model_output = ""
         try:
             raw = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
             )
-            text = (raw or "").strip()
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            data = json.loads(text[start:end]) if start >= 0 and end > start else {}
+            raw_model_output = (raw or "").strip()
+            start = raw_model_output.find("{")
+            end = raw_model_output.rfind("}") + 1
+            data = json.loads(raw_model_output[start:end]) if start >= 0 and end > start else {}
             for item in data.get("scores", []):
                 if isinstance(item, dict) and item.get("topic"):
                     parsed_scores[str(item["topic"])] = {
@@ -276,15 +226,18 @@ Topics with weights and answers:
                     }
         except Exception:
             parsed_scores = {}
+            raw_model_output = raw_model_output or "ERROR: failed to parse model scoring output."
 
         topic_scores = {}
         total = 0.0
+        scoring_trace = {}
         for topic, max_score in weights.items():
             answer = topics.get(topic)
             has_answer = bool(str(answer).strip()) if answer is not None else False
             fallback = int(round(max_score * 0.5)) if has_answer else 0
             score = parsed_scores.get(topic, {}).get("score", fallback)
             score = max(0, min(int(max_score), int(score)))
+            used_fallback = topic not in parsed_scores
             topic_scores[topic] = {
                 "score": score,
                 "max_score": max_score,
@@ -292,8 +245,25 @@ Topics with weights and answers:
                 "reason": parsed_scores.get(topic, {}).get("reason", ""),
                 "confidence": "medium" if has_answer else "low",
             }
+            scoring_trace[topic] = {
+                "input_answer": answer or "",
+                "parsed_score": parsed_scores.get(topic, {}).get("score"),
+                "fallback_score": fallback,
+                "final_score": score,
+                "used_fallback": used_fallback,
+            }
             total += score
-        return {"total": total, "topic_scores": topic_scores}
+        return {
+            "total": total,
+            "topic_scores": topic_scores,
+            "debug": {
+                "branch_name": branch_name,
+                "weights": weights,
+                "raw_model_output": raw_model_output,
+                "parsed_scores": parsed_scores,
+                "scoring_trace": scoring_trace,
+            },
+        }
     
     def _branch_a_band(self, score: float) -> Dict[str, str]:
         if score <= 25:
@@ -306,13 +276,25 @@ Topics with weights and answers:
             return {"name": "Quantum Preparing", "recommended_focus": "Deepen capability, formalize roadmap, monitor competitors."}
         return {"name": "Quantum Ready", "recommended_focus": "Scale validated pilots and protect quantum-derived IP."}
 
-    def _branch_b_band(self, score: float) -> Dict[str, str]:
-        if score <= 25:
-            return {"name": "Critical Exposure", "recommended_focus": "Run an urgent cryptographic audit and develop a CBOM."}
-        if score <= 45:
-            return {"name": "High Risk", "recommended_focus": "Build inventory, evaluate NIST PQC, and assess vendor roadmaps."}
-        if score <= 65:
-            return {"name": "Moderate Risk", "recommended_focus": "Set migration timelines and enforce cryptographic agility."}
-        if score <= 80:
-            return {"name": "Managing", "recommended_focus": "Accelerate supply-chain alignment and stress-test response plans."}
-        return {"name": "Post-Quantum Ready", "recommended_focus": "Maintain agility and extend PQC requirements across partners."}
+    def _log_model_quality_debug_analyzer(
+        self,
+        branch_a_topics: Dict[str, Any],
+        branch_a_weights: Dict[str, int],
+        branch_a_result: Dict[str, Any],
+        branch_a_score: float,
+        archetype: str,
+    ) -> None:
+        debug_payload = branch_a_result.get("debug", {})
+        print(
+            "\n[MODEL_QUALITY_DEBUG_ANALYZER]"
+            f"\n- model: {self._model_gateway.default_model}"
+            f"\n- scoring_branch: {debug_payload.get('branch_name', 'Branch A')}"
+            f"\n- input_topics: {json.dumps(branch_a_topics, ensure_ascii=False)}"
+            f"\n- weights: {json.dumps(branch_a_weights, ensure_ascii=False)}"
+            f"\n- raw_model_output: {debug_payload.get('raw_model_output', '')}"
+            f"\n- parsed_scores: {json.dumps(debug_payload.get('parsed_scores', {}), ensure_ascii=False)}"
+            f"\n- scoring_trace: {json.dumps(debug_payload.get('scoring_trace', {}), ensure_ascii=False)}"
+            f"\n- final_branch_a_score: {branch_a_score:.1f}"
+            f"\n- final_archetype: {archetype}"
+            "\n[/MODEL_QUALITY_DEBUG_ANALYZER]\n"
+        )

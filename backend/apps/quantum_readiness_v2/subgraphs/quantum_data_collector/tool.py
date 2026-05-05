@@ -9,8 +9,7 @@ OLD LOGIC (field-filling tool):
 - The user can skip any question (UI sends "/skip") -> we store null/"no_response".
 - If the user asks for clarification, we respond with a clarification message and re-ask.
 
-For testing, we collect 8 topic-level fields (4 per branch) to keep interview
-time short while preserving the two-branch structure.
+For testing, we collect 4 topic-level fields focused on quantum competitiveness.
 
 NEW IDEA :
 - Give a system prompt with all fields and rules at the beginning of data collection.
@@ -58,10 +57,7 @@ class QuantumDataCollectorTool(SubgraphProtocol):
     """
     Data Collection Tool for Quantum Readiness assessment.
     
-    Collects information through three phases:
-    1. Onboarding (industry, interest driver)
-    2. Cryptographic Risk Assessment (4 dimensions)
-    3. Quantum Opportunity Assessment (4 dimensions)
+    Collects information for Branch A (quantum competitiveness) only.
     
     Uses interrupt() for each question to suspend execution and wait for user response.
     """
@@ -108,47 +104,19 @@ class QuantumDataCollectorTool(SubgraphProtocol):
                 "No pilots yet, limited ecosystem ties, informal monitoring only.",
             ],
         },
-        {
-            "key": "b_data_exposure_profile",
-            "explanation": "Branch B topic: data and exposure profile (confidentiality horizon, standards visibility, cryptography inventory, compliance, long-lived PKI assets).",
-            "default_question": "Cryptographic Risk & PQ Security - Data & Exposure Profile: Summarize how long sensitive data must remain confidential, how well you know your current encryption standards and cryptography inventory, key compliance drivers, and any long-lived public-key dependencies.",
-            "answer_criteria": "Provide exposure profile details with at least partial inventory/standards awareness.",
-            "example_answers": ["10+ year confidentiality data, partial inventory, PCI and ISO scope, strong PKI dependencies.", "Shorter horizons, limited inventory, low regulatory pressure."],
-        },
-        {
-            "key": "b_migration_readiness",
-            "explanation": "Branch B topic: migration readiness (NIST PQC evaluation, vendor plans, crypto agility, timeline/budget).",
-            "default_question": "Cryptographic Risk & PQ Security - Migration Readiness: Describe your current PQC migration status (NIST algorithms), vendor readiness checks, cryptographic agility in new systems, and your migration timeline/budget.",
-            "answer_criteria": "Indicate migration stage and practical readiness for execution.",
-            "example_answers": ["PQC pilots underway, vendor plans reviewed, agility-by-design, funded roadmap.", "Not started, no vendor review, no timeline or budget."],
-        },
-        {
-            "key": "b_supply_chain_ecosystem",
-            "explanation": "Branch B topic: supply chain and ecosystem risk (vendor vulnerability, contractual pressure, incident response).",
-            "default_question": "Cryptographic Risk & PQ Security - Supply Chain & Ecosystem: Explain your third-party encryption exposure, expected contractual PQC pressure from customers/partners, and incident response preparedness for sudden cryptographic compromise.",
-            "answer_criteria": "Cover external dependency risk and preparedness to respond.",
-            "example_answers": ["Critical vendors expose legacy crypto risk; response plan tested.", "Exposure unclear and incident planning minimal."],
-        },
-        {
-            "key": "b_governance",
-            "explanation": "Branch B topic: governance (executive sponsorship and dedicated budget).",
-            "default_question": "Cryptographic Risk & PQ Security - Governance: Describe executive-level ownership of quantum cryptographic risk and whether budget for PQC migration is dedicated.",
-            "answer_criteria": "State leadership sponsorship and budget governance maturity.",
-            "example_answers": ["CISO-sponsored program with ring-fenced PQC budget.", "No clear executive sponsor; budget competes with general security needs."],
-        },
     ]
     SYSTEM_PROMPT = f"""
 SYSTEM PROMPT : 
 You are a professional quantum assistant that helps managers to assess the quantum readiness of their company/structure.
 Your first step is to gather the information necessary for this assessment.
-More precisely, your goal is to identify the user's information according to 8 fields, described by the following attributes :
+More precisely, your goal is to identify the user's information according to 4 fields, described by the following attributes :
 - "key" : a string to identify the field
 - "explanation": an explanation of the field
 - "default question": an exemple question to ask to get more information about the field
 - "answer_criteria": what information is needed to consider the field as complete
 - "example_answers": a list of example user answers that fill the information needed for the field
 
-Here are the 8 fields :
+Here are the 4 fields :
 
 {json.dumps(FIELD_SPECS)}
 
@@ -157,7 +125,7 @@ Your objective is always to get more information from the user about the current
 
 Don't forget that you want to get as much information as possible in as few messages as possible.
 """
-    TOTAL_STEPS = 8
+    TOTAL_STEPS = 4
     MAX_RETRIES_PER_FIELD = 5
 
     # --- Main functions ---
@@ -406,7 +374,7 @@ If the user strays too far from the topic, remind them that you are here to asse
         current_field = state['stepData']['current_field_key']
         information_status = self._write_information_status(state["stepData"])
         main_prompt = f"""
-Your task now is to extract relevant information from the user answer in order to fill the 8 quantum readiness fields described in your system prompt.
+Your task now is to extract relevant information from the user answer in order to fill the 4 quantum readiness fields described in your system prompt.
 
 Here is a summary of the information already extracted for each field :
 
@@ -558,9 +526,11 @@ Output STRICT JSON with this schema:
             if next_field == None:
                 await adispatch_custom_event("tool_progress", {"step": 1, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
                 state["nextNode"] = "before_analyzer"
+                self._log_model_quality_debug(state=state, current_field=current_field)
                 return state
             state["stepData"]["current_field_key"] = next_field
             await adispatch_custom_event("tool_progress", {"step": 1, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+        self._log_model_quality_debug(state=state, current_field=current_field)
         state["nextNode"] = "generate_question"
         return state
     
@@ -572,17 +542,9 @@ Output STRICT JSON with this schema:
             "strategic_organizational_maturity": collected.get("a_strategic_organizational_maturity"),
             "roadmap_ecosystem": collected.get("a_roadmap_ecosystem"),
         }
-        branch_b_topics = {
-            "data_exposure_profile": collected.get("b_data_exposure_profile"),
-            "migration_readiness": collected.get("b_migration_readiness"),
-            "supply_chain_ecosystem": collected.get("b_supply_chain_ecosystem"),
-            "governance": collected.get("b_governance"),
-        }
-
         step_data = {
             "user_industry": collected.get("a_use_case_identification"),
             "branch_a_topics": branch_a_topics,
-            "branch_b_topics": branch_b_topics,
             "fields": collected,
         }
         await adispatch_custom_event(
@@ -621,3 +583,25 @@ Output STRICT JSON with this schema:
             elif field_status == "complete":
                 complete_fields_str += f"\n    - key : {field['key']} ; information : {field_information}"
         return f"1. {complete_fields_str}\n\n2. {ongoing_fields_str}\n\n3. {empty_fields_str}"
+
+    def _log_model_quality_debug(self, state: SubgraphState, current_field: str) -> None:
+        question = self._latest_assistant_question(state["stepData"].get("messages", []))
+        user_answer = state["stepData"].get("last_user_answer", "")
+        stored_field_value = state["stepData"].get("field_information", {}).get(current_field, "")
+        stored_field_status = state["stepData"].get("field_status", {}).get(current_field, "unknown")
+        print(
+            "\n[MODEL_QUALITY_DEBUG]"
+            f"\n- model: {self.VALIDATOR_MODEL}"
+            f"\n- current_field: {current_field}"
+            f"\n- field_status: {stored_field_status}"
+            f"\n- agent_question: {question}"
+            f"\n- user_response: {user_answer}"
+            f"\n- stored_field_information: {stored_field_value}"
+            "\n[/MODEL_QUALITY_DEBUG]\n"
+        )
+
+    def _latest_assistant_question(self, messages: List[Dict[str, str]]) -> str:
+        for message in reversed(messages):
+            if message.get("role") == "assistant":
+                return message.get("content", "")
+        return "No assistant question found."
