@@ -10,19 +10,21 @@ import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent } from '../types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-export function useChat(sessionId: string) {
+export function useChat(sessionId: string, setSessionId: (value: string) => void) {
   const [uiState, setUIState] = useState<UIState>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
   const [toolMeta, setToolMeta] = useState<ToolMeta | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentResponse, setCurrentResponse] = useState<string>("");
+  const [lockChatInput, setLockChatInput] = useState<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const responseBufferRef = useRef<string>("");
   const seenQuestionPromptIdsRef = useRef<Set<string>>(new Set());
   const lastQuestionTextRef = useRef<string | null>(null);
 
   const handleEvent = useCallback((event: SSEEvent) => {
+    console.log("event received :", event.type);
     switch (event.type) {
       case "session_state":
         if (event.meta.resumable) {
@@ -39,6 +41,9 @@ export function useChat(sessionId: string) {
         break;
 
       case "text_done":
+        // enable chat input
+        setLockChatInput(false);
+
         if (responseBufferRef.current || event.payload.full_text) {
           const fullText = event.payload.full_text || responseBufferRef.current;
           setMessages((prev) => [
@@ -68,6 +73,8 @@ export function useChat(sessionId: string) {
         break;
 
       case "tool_question": 
+        // enable chat input
+        setLockChatInput(false);
         {
           const questionText = String(event.payload.text || "").trim();
           const promptId = event.payload.prompt_id || event.meta.pending_prompt_id || undefined;
@@ -102,6 +109,9 @@ export function useChat(sessionId: string) {
         break;
 
       case "tool_waiting_input":
+        // enable chat input
+        setLockChatInput(false);
+
         setUIState("awaiting_input");
         break;
 
@@ -129,6 +139,9 @@ export function useChat(sessionId: string) {
 
   const send = useCallback(async (text: string, promptId?: string) => {
     if (!text.trim()) return;
+
+    // disable chat input
+    setLockChatInput(true);
 
     // Add user message
     const userMessage: Message = {
@@ -210,6 +223,37 @@ export function useChat(sessionId: string) {
     send("/cancel", currentQuestion?.prompt_id);
   }, [send, currentQuestion]);
 
+  const deleteHistory = useCallback(() => {
+    // clear history
+    setMessages([]);
+    setUIState("idle");
+    setToolMeta(null);
+    setCurrentQuestion(null);
+    setCurrentResponse("");
+    setLockChatInput(false);
+
+    // clear refs ?
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    if (responseBufferRef.current) {
+      responseBufferRef.current = "";
+    }
+    if (seenQuestionPromptIdsRef.current) {
+      seenQuestionPromptIdsRef.current = new Set();
+    }
+    if (lastQuestionTextRef.current) {
+      lastQuestionTextRef.current = null;
+    }
+
+    // change sessionId
+    const newSessionId = crypto.randomUUID();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('session_id', newSessionId);
+    }
+    setSessionId(newSessionId);
+  }, [])
+
   return {
     uiState,
     messages,
@@ -217,7 +261,9 @@ export function useChat(sessionId: string) {
     currentQuestion,
     error,
     currentResponse,
+    lockChatInput,
     send,
+    deleteHistory,
     cancel,
   };
 }

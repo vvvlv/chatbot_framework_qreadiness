@@ -12,18 +12,18 @@ export function ChatWindow() {
       value
     );
   };
-
-  const [sessionId] = useState(() => {
-    // Generate or retrieve session ID
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('session_id');
-      if (stored && isUuid(stored)) return stored;
-      const newId = crypto.randomUUID();
-      localStorage.setItem('session_id', newId);
-      return newId;
+  
+  let initSessionId : string = crypto.randomUUID();
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('session_id');
+    if (stored && isUuid(stored)) {
+      initSessionId = stored;
     }
-    return crypto.randomUUID();
-  });
+    else {
+      localStorage.setItem('session_id', initSessionId);
+    }
+  }
+  const [sessionId, setSessionId] = useState<string>(initSessionId);
 
   const {
     uiState,
@@ -31,9 +31,11 @@ export function ChatWindow() {
     toolMeta,
     currentQuestion,
     error,
+    lockChatInput,
     currentResponse,
     send,
-  } = useChat(sessionId);
+    deleteHistory,
+  } = useChat(sessionId, setSessionId);
 
   const steps = [
     "Welcome",
@@ -209,7 +211,8 @@ export function ChatWindow() {
       <div className="border-t border-slate-800 bg-slate-950/90 px-6 py-4 backdrop-blur">
         <ChatInput
           onSend={send}
-          disabled={uiState === "streaming"}
+          onDelete={deleteHistory}
+          disabled={uiState === "streaming" || lockChatInput}
           currentQuestion={currentQuestion}
           uiState={uiState}
         />

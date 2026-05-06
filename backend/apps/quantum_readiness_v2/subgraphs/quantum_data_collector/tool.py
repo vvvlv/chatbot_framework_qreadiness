@@ -47,7 +47,6 @@ class QuantumDataCollectorState(TypedDict, total=False):
     field_information: Dict[str, str] # field_key -> user information about the field
     user_command: Optional[str] # potential inputed command between /cancel, /skip and /clarify
     current_field_key: Optional[str]
-    context_summary: Optional[str] # summary of the conversation before the call of the Quantum Readiness subgraph
     pending_question: Optional[str]
     consumed_prompt_ids: List[str]
     last_validation_reason: Optional[str]
@@ -65,7 +64,7 @@ class QuantumDataCollectorTool(SubgraphProtocol):
     # --- Global variables ---
 
     name = "quantum_data_collector"
-    VALIDATOR_MODEL = "mistral/mistral-small-latest" # Keep model lightweight for faster validation loops.
+    VALIDATOR_MODEL = "claude-sonnet-4-6" # Keep model lightweight for faster validation loops.
     FIELD_SPECS: List[FieldSpec] = [
         {
             "key": "a_use_case_identification",
@@ -121,9 +120,7 @@ Here are the 4 fields :
 {json.dumps(FIELD_SPECS)}
 
 I will update you on the information status for each field after every user message, and tell you what is the current field to focus on.
-Your objective is always to get more information from the user about the current field.
-
-Don't forget that you want to get as much information as possible in as few messages as possible.
+Your main objective is always to get more information from the user about the current field, but you can help them to better understand technical terms if they need.
 """
     TOTAL_STEPS = 4
     MAX_RETRIES_PER_FIELD = 5
@@ -196,7 +193,7 @@ Don't forget that you want to get as much information as possible in as few mess
         )
         print(f"[DATA_COLLECTOR] DEBUG - summary : {summary}")
         stepData : QuantumDataCollectorState = {
-            "messages": [],
+            "messages": [{"role": "assistant", "content": summary}],
             "field_status": {field["key"]: "empty" for field in self.FIELD_SPECS},
             "last_user_answer": None,
             "message_count": 0,
@@ -207,7 +204,6 @@ Don't forget that you want to get as much information as possible in as few mess
             "pending_question": None,
             "user_command": None,
             "current_field_key": "a_use_case_identification",
-            "context_summary": summary,
             "step": 0,
         }
 
@@ -239,6 +235,11 @@ Don't forget that you want to get as much information as possible in as few mess
             print(f"[DATA_COLLECTOR] DEBUG - pending question : {question}")
         else:
             information_status = self._write_information_status(state["stepData"])
+            extra_rules = ""
+            if state["stepData"]["iterations_count"][state['stepData']['current_field_key']] == 4:
+                extra_rules = """It is your last question to get information about the current field.
+If the user strays too far from the topic, warn them that you're going to switch to a next field at next question.
+"""
             if state["stepData"].get("last_user_answer", None) == None:
                 system_message = f"""
 INFORMATION STATUS :
@@ -246,8 +247,6 @@ INFORMATION STATUS :
 {information_status}
 
 CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
-
-MESSAGE COUNT (User + Assistant) : {state['stepData'].get('message_count', 'unknown')}
 
 INSTRUCTION : generate a question to get more information from the user about the current field.
 """
@@ -259,17 +258,19 @@ INFORMATION STATUS :
 
 CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
 
-MESSAGE COUNT (User + Assistant) : {state['stepData'].get('message_count', 'unknown')}
-
-LAST USER MESSAGE : {state['stepData'].get('last_user_answer', 'no user message')}
-
 INSTRUCTION : Generate a message based on your system prompt, the last user message and the message history.
-If the user strays too far from the topic, remind them that you are here to assess their quantum readiness and offer them to cancel the procedure if they want.
+{extra_rules}
 """
-            state["stepData"]["messages"].append({"role": "system", "content": system_message})
-            llm_messages = [{"role": "system", "content": self.SYSTEM_PROMPT}] + [{"role": "assistant", "content": state["stepData"]["context_summary"]}] + state["stepData"]["messages"][-5:]
+            new_message = {
+                "role": "user",
+                "content": f"""<instructions>{system_message}</instructions>
+
+<user_message>{state['stepData'].get('last_user_answer', 'no user message')}</user_message>"""
+            }
+            state["stepData"]["messages"].append(new_message)
+            llm_message : list[Dict] = [{"role": "system", "content": self.SYSTEM_PROMPT}] + state["stepData"]["messages"][-5:]
             question = await self._model_gateway.chat(
-                messages= llm_messages,
+                messages=llm_message,
                 model=self.VALIDATOR_MODEL,
                 temperature=0.4,
             )
@@ -391,9 +392,9 @@ The user answered : {state['stepData']['last_user_answer']}
         # Task 1
         task1_prompt = "Extract relevant information for the current field from the user answer, based on the current field attributes. If there is no relevant information, just return 'no information'. Do not include markdown, code fences, or extra keys."
         step_messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
-            {"role": "system", "content": main_prompt},
-            {"role": "system", "content": task1_prompt}
+            {"role": "user", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": main_prompt},
+            {"role": "user", "content": task1_prompt}
         ]
         raw = await self._model_gateway.chat(
             messages=step_messages,
@@ -409,7 +410,7 @@ Do not include markdown, code fences, or extra keys.
 """
         step_messages += [
             {"role": "assistant", "content": text},
-            {"role": "system", "content": task2_prompt}
+            {"role": "user", "content": task2_prompt}
         ]
         raw = await self._model_gateway.chat(
             messages=step_messages,
@@ -437,7 +438,7 @@ Output STRICT JSON with this schema:
 """
         step_messages += [
             {"role": "assistant", "content": text},
-            {"role": "system", "content": task3_prompt}
+            {"role": "user", "content": task3_prompt}
         ]
         raw = await self._model_gateway.chat(
             messages=step_messages,
@@ -498,7 +499,7 @@ Output STRICT JSON with this schema:
 """
         step_messages += [
             {"role": "assistant", "content": text},
-            {"role": "system", "content": task4_prompt}
+            {"role": "user", "content": task4_prompt}
         ]
         raw = await self._model_gateway.chat(
             messages=step_messages,

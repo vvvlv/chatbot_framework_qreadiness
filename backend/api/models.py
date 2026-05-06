@@ -31,3 +31,5 @@ class ChatResponse(BaseModel):
 # TODO : define other models ? What models ?
 #       - a base model for unspecific requests ?
 #       - request for tools (eg RAG tool) ?
+#       - request for deleting message list
+#       - or for creating a new conversation

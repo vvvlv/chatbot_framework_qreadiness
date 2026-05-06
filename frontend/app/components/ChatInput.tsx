@@ -5,12 +5,13 @@ import { QuestionEvent, UIState } from '../types';
 
 interface ChatInputProps {
   onSend: (text: string, promptId?: string) => void;
+  onDelete: () => void;
   disabled: boolean;
   currentQuestion: QuestionEvent | null;
   uiState: UIState;
 }
 
-export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatInputProps) {
+export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState }: ChatInputProps) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -84,6 +85,14 @@ export function ChatInput({ onSend, disabled, currentQuestion, uiState }: ChatIn
           className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
           style={{ minHeight: "44px", maxHeight: "120px" }}
         />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onDelete}
+          className="rounded-xl bg-red-500 px-6 py-2 font-medium text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+        >
+          {"clear"}
+        </button>
         <button
           type="submit"
           disabled={disabled || !input.trim()}

@@ -15,7 +15,7 @@ def get_model_gateway() -> ModelGateway:
     """Get or create the global ModelGateway instance."""
     global _model_gateway
     if _model_gateway is None:
-        default_model = os.getenv("LLM_MODEL", "mistral/mistral-small-latest")
+        default_model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
         _model_gateway = ModelGateway(default_model=default_model)
     return _model_gateway
 
