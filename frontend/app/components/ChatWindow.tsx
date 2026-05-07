@@ -4,7 +4,7 @@ import { useChat } from '../hooks/useChat';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ToolChrome } from './ToolChrome';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export function ChatWindow() {
   const isUuid = (value: string): boolean => {
@@ -89,17 +89,25 @@ export function ChatWindow() {
   ][activeStep];
 
   const showProcessingIndicator =
-    Boolean(toolMeta) &&
-    uiState === "tool_active" &&
-    !currentQuestion &&
-    !currentResponse;
+    uiState === "awaiting_assistant" || (
+      Boolean(toolMeta) &&
+      uiState === "tool_active" &&
+      !currentQuestion &&
+      !currentResponse
+    );
 
   const processingText = (() => {
-    if (!toolMeta) return "Processing assessment...";
+    if (!toolMeta) return "Processing answer...";
     if (toolMeta.name === "quantum_analyzer") return "Analyzing your branch responses...";
     if (toolMeta.name === "quantum_presenter") return "Generating your readiness report...";
-    return "Processing assessment...";
+    return "Processing answer...";
   })();
+
+  // keep scroll at the bottom of message list
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   return (
     <div className={`flex h-screen flex-col bg-gradient-to-b ${theme.shell} transition-colors duration-500`}>
@@ -205,6 +213,9 @@ export function ChatWindow() {
             <p className="text-red-200">{error}</p>
           </div>
         )}
+
+        {/* Keep scroll at the bottom */}
+        <div ref={bottomRef}></div>
       </div>
 
       {/* Input */}

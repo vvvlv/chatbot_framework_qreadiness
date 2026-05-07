@@ -4,7 +4,7 @@
  * According to app_definition.md Section 7, all events follow a typed envelope.
  */
 
-export type UIState = "idle" | "streaming" | "tool_active" | "awaiting_input" | "error";
+export type UIState = "idle" | "streaming" | "tool_active" | "awaiting_input" | "error" | "awaiting_assistant";
 
 export interface SSEEvent {
   type: string;

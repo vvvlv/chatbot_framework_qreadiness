@@ -27,11 +27,11 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     console.log("event received :", event.type);
     switch (event.type) {
       case "session_state":
-        if (event.meta.resumable) {
-          setUIState("awaiting_input");
-        } else if (!event.meta.active_tool) {
-          setUIState("idle");
-        }
+        // if (event.meta.resumable) {
+        //   setUIState("awaiting_input");
+        // } else if (!event.meta.active_tool) {
+        //   setUIState("idle");
+        // }
         break;
 
       case "text_delta":
@@ -43,7 +43,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
       case "text_done":
         // enable chat input
         setLockChatInput(false);
-
+        setUIState("idle");
         if (responseBufferRef.current || event.payload.full_text) {
           const fullText = event.payload.full_text || responseBufferRef.current;
           setMessages((prev) => [
@@ -58,7 +58,6 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
           responseBufferRef.current = "";
           setCurrentResponse("");
         }
-        setUIState("idle");
         break;
 
       case "tool_start":
@@ -142,6 +141,9 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
 
     // disable chat input
     setLockChatInput(true);
+    
+    // TODO : skip this instruction in case of non-chat request
+    setUIState("awaiting_assistant");
 
     // Add user message
     const userMessage: Message = {

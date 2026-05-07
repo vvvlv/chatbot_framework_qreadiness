@@ -91,7 +91,7 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
           onClick={onDelete}
           className="rounded-xl bg-red-500 px-6 py-2 font-medium text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-slate-700"
         >
-          {"clear"}
+          {"Clear"}
         </button>
         <button
           type="submit"
