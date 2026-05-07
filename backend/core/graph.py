@@ -39,8 +39,6 @@ def build_core_graph(
     Returns:
         Compiled graph ready for execution
     """
-    # NOTE: top-level compiled state currently needs tool-owned fields to survive
-    # interrupt/resume across nested tool graphs.
     graph = StateGraph(CoreState)
     
     # Create async wrapper for fallback_llm_node

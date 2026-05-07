@@ -177,23 +177,16 @@ Your main objective is always to get more information from the user about the cu
     # --- Node functions ---
 
     async def init_node(self, state: SubgraphState) -> SubgraphState:
-        conversation_context = []
-        for msg in state.get("messages", []):
+
+        # Convert 5 last BaseMessages to a suitable type for litellm
+        last_5_messages = []
+        for msg in state.get("messages", [])[-5:]:
             role = "user" if hasattr(msg, 'type') and msg.type == "human" else "assistant"
             content = msg.content if hasattr(msg, 'content') else str(msg)
-            conversation_context.append({"role": role, "content": content})
-        prevMessages = conversation_context + [{
-            "role": "system",
-            "content": "Make a ~50-words summary of the conversation. If there is no message before this one, just say that there is no previous conversation."
-        }]
-        summary = await self._model_gateway.chat(
-            messages=prevMessages,
-            model=self.VALIDATOR_MODEL,
-            temperature=0.4,
-        )
-        print(f"[DATA_COLLECTOR] DEBUG - summary : {summary}")
+            last_5_messages.append({"role": role, "content": content})
+        
         stepData : QuantumDataCollectorState = {
-            "messages": [{"role": "assistant", "content": summary}],
+            "messages": last_5_messages,
             "field_status": {field["key"]: "empty" for field in self.FIELD_SPECS},
             "last_user_answer": None,
             "message_count": 0,

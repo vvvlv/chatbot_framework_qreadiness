@@ -1,6 +1,7 @@
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from typing import Optional, TypedDict, Dict
+from langchain_core.messages import AIMessage, HumanMessage
 
 from core.protocols import ToolProtocol
 from core.state import SubgraphState
@@ -18,6 +19,8 @@ class InterruptTool(ToolProtocol):
 
     """
     Interrupt tool to get user input from inside a subGraph
+
+    NOTE : This tool writes into the core property "messages"
     """
     
     name = "Interrupt_tool"
@@ -28,8 +31,14 @@ class InterruptTool(ToolProtocol):
         """
 
     def wrapped_interrupt(self, state: SubgraphState) -> SubgraphState:
+        # TODO ?: maybe add a bool property in args to decide wether to add interrupt messages in the core message file or not
         args : InterruptArg = state["common_tool_input"]["args"]
         answer = interrupt(args)
+        question = args.get("text", None)
+        if question:
+            state["messages"].append(AIMessage(content=question))
+        if answer and answer != "":
+            state["messages"].append(HumanMessage(content=question))
         state["nextNode"] = state["common_tool_input"]["nextNode"]
         state["common_tool_output"] = {
             "answer": answer

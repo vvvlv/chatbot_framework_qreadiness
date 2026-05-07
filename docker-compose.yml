@@ -16,6 +16,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: qreadiness-litellm
