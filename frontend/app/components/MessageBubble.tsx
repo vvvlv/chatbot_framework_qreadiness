@@ -16,12 +16,12 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
       <div
         className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${
           isUser
-            ? "bg-indigo-500 text-white"
-            : "border border-slate-700/80 bg-slate-900/90 text-slate-100"
+            ? "bg-teal text-white"
+            : "bg-skyblue/50 border border-skyblue text-navy"
         } ${isStreaming ? "opacity-70" : ""}`}
       >
         <span
-          className="prose prose-invert prose-sm max-w-none"
+          // className="prose prose-sm prose-headings:font-title prose-p:font-paragraph prose-a:font-paragraph"
           dangerouslySetInnerHTML={{ __html: marked(message.content) }}
         />
         {isStreaming && (

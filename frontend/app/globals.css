@@ -1,29 +1,23 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@theme {
+  --font-title: "Times New Roman";
+  --font-paragraph: "Montserrat", sans-serif;
+  --color-navy: #2F4156;
+  --color-teal: #567C8D;
+  --color-skyblue: #C8D9E6;
+  --color-beige: #F5EFEB;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+.prose * {
+  color: inherit;
 }
 
 .prose ol ol {

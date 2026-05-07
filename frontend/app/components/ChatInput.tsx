@@ -43,15 +43,15 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
   return (
     <div className="space-y-3">
       {currentQuestion && (
-        <div className="flex items-center gap-2 text-xs text-slate-300">
-          <span className="inline-flex items-center rounded-full border border-slate-600 bg-slate-800 px-2.5 py-1">
-            Awaiting your answer
+        <div className="flex items-center gap-2 text-xs font-paragraph">
+          <span className="inline-flex items-center rounded-full text-navy bg-transparent px-2.5 py-1">
+            Awaiting your answer...
           </span>
           <button
             type="button"
             disabled={disabled}
             onClick={() => onSend("/skip", currentQuestion?.prompt_id)}
-            className="rounded-full border border-slate-600 px-3 py-1 hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-full border border-navy px-3 py-1 text-navy hover:bg-navy/10 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Skip
           </button>
@@ -59,7 +59,7 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
             type="button"
             disabled={disabled}
             onClick={() => onSend("/clarify", currentQuestion?.prompt_id)}
-            className="rounded-full border border-indigo-500/50 px-3 py-1 text-indigo-200 hover:bg-indigo-500/10 disabled:opacity-50"
+            className="rounded-full border border-teal px-3 py-1 text-teal hover:bg-teal/10 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Clarify
           </button>
@@ -67,7 +67,7 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
             type="button"
             disabled={disabled}
             onClick={() => onSend("/cancel", currentQuestion?.prompt_id)}
-            className="rounded-full border border-red-500/50 px-3 py-1 text-red-200 hover:bg-red-500/10 disabled:opacity-50"
+            className="rounded-full border border-red-500 px-3 py-1 text-red-500 hover:bg-red-500/10 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
@@ -82,21 +82,21 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+          className="flex-1 rounded-xl bg-white px-4 py-3 text-navy placeholder:text-navy/50 focus:outline-none focus:ring-2 focus:ring-navy resize-none"
           style={{ minHeight: "44px", maxHeight: "120px" }}
         />
         <button
           type="button"
           disabled={disabled}
           onClick={onDelete}
-          className="rounded-xl bg-red-500 px-6 py-2 font-medium text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+          className="rounded-xl bg-white border border-red-500 px-6 py-2 font-paragraph font-medium text-red-500 hover:bg-red-500/20 hover:cursor-pointer disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400"
         >
           {"Clear"}
         </button>
         <button
           type="submit"
           disabled={disabled || !input.trim()}
-          className="rounded-xl bg-indigo-500 px-6 py-2 font-medium text-white hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+          className="rounded-xl bg-navy px-6 py-2 font-paragraph font-medium text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {disabled ? "Sending..." : "Send"}
         </button>

@@ -67,27 +67,6 @@ export function ChatWindow() {
     return 1;
   })();
 
-  const theme = [
-    {
-      shell: "from-slate-950 via-slate-900 to-slate-950",
-      accent: "bg-slate-500",
-      ring: "ring-slate-600/40",
-      text: "text-slate-200",
-    },
-    {
-      shell: "from-indigo-950 via-slate-900 to-slate-950",
-      accent: "bg-indigo-500",
-      ring: "ring-indigo-600/40",
-      text: "text-indigo-200",
-    },
-    {
-      shell: "from-emerald-950 via-slate-900 to-slate-950",
-      accent: "bg-emerald-500",
-      ring: "ring-emerald-600/40",
-      text: "text-emerald-200",
-    },
-  ][activeStep];
-
   const showProcessingIndicator =
     uiState === "awaiting_assistant" || (
       Boolean(toolMeta) &&
@@ -110,65 +89,69 @@ export function ChatWindow() {
   }, [messages]);
 
   return (
-    <div className={`flex h-screen flex-col bg-gradient-to-b ${theme.shell} transition-colors duration-500`}>
-      <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/70 px-6 py-4 backdrop-blur">
-        <h1 className="text-2xl font-bold text-white">
+    <div className={`flex h-screen flex-col bg-white`}>
+      <header className="sticky top-0 z-20 bg-skyblue px-6 py-4 shadow-sm">
+        <h1 className="text-3xl font-title font-bold text-navy">
           Quantum Readiness Chatbot
         </h1>
-        <p className="mt-1 text-sm text-slate-300">
-          Assess your company's quantum readiness through a structured conversational workflow
+        <p className="mt-1 text-sm text-navy font-paragraph">
+          Are you quantum ready? Find out now with a 10-minute conversation.
         </p>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
           {steps.map((step, index) => {
             const isActive = index === activeStep;
             const isDone = index < activeStep;
+            const workflowStep = step === "Quantum Competitiveness";
             return (
               <div
                 key={step}
-                className={`rounded-xl border px-3 py-2 transition ${
+                className={`flex rounded-xl border px-3 py-2 transition ${
                   isActive
-                    ? `border-slate-600 bg-slate-900 ring-1 ${theme.ring}`
-                    : "border-slate-800 bg-slate-950/80"
+                    ? `bg-white border-navy ring-1 ring-navy`
+                    : isDone ?
+                    "border-skyblue ring-0 bg-navy"
+                    : "border-skyblue ring-0 bg-white"
                 }`}
               >
-                <div className="mb-2 flex items-center gap-2">
-                  <span
-                    className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
-                      isActive || isDone ? `${theme.accent} text-white` : "bg-slate-800 text-slate-400"
-                    }`}
-                  >
-                    {index + 1}
-                  </span>
-                  <span className={`text-[11px] font-semibold ${isActive ? theme.text : "text-slate-400"}`}>
-                    {isActive ? "Active" : isDone ? "Done" : "Pending"}
-                  </span>
+                <div className="flex flex-col">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span
+                      className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-title font-bold ${
+                        isActive ? `bg-navy text-white` : isDone ? `bg-white text-navy` : "bg-slate-400 text-white"
+                      }`}
+                    >
+                      {index + 1}
+                    </span>
+                    <span className={`text-[11px] font-paragraph font-semibold ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>
+                      {isActive ? "Active" : isDone ? "Done" : "Pending"}
+                    </span>
+                  </div>
+                  <p className={`text-xs font-paragraph ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>{step}</p>
                 </div>
-                <p className={`text-xs ${isActive ? "text-slate-100" : "text-slate-400"}`}>{step}</p>
+                {workflowStep && (<ToolChrome toolMeta={toolMeta} onCancel={() => send("/cancel", currentQuestion?.prompt_id)} visible={activeStep === 1} />)}
               </div>
             );
           })}
         </div>
-
-        <ToolChrome toolMeta={toolMeta} onCancel={() => send("/cancel", currentQuestion?.prompt_id)} visible={activeStep === 1} />
       </header>
 
       {/* Messages */}
       <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
         {messages.length === 0 && (
           <div className="h-full flex items-center justify-center">
-            <div className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 text-center shadow-xl">
-              <p className="text-lg font-medium text-slate-100">
-                Choose an app to start
+            <div className="max-w-md rounded-2xl border border-navy bg-skyblue p-8 text-center shadow-xl">
+              <p className="text-2xl font-title font-bold text-navy">
+                Click below to start a workflow.
               </p>
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="mt-2 font-paragraph text-sm text-navy">
                 Start the structured workflow without typing a command.
               </p>
               <button
                 type="button"
                 disabled={uiState === "streaming"}
                 onClick={() => send("assessment")}
-                className="mt-6 w-full rounded-xl bg-indigo-500 px-6 py-3 text-white hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+                className="mt-6 w-full rounded-xl bg-teal px-6 py-3 text-white font-paragraph hover:bg-teal/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
               >
                 Start Quantum Readiness Assessment
               </button>
@@ -182,13 +165,13 @@ export function ChatWindow() {
 
         {showProcessingIndicator && (
           <div className="flex justify-start">
-            <div className="max-w-[82%] rounded-2xl border border-slate-700/80 bg-slate-900/90 px-4 py-3 text-slate-100 shadow-sm">
+            <div className="max-w-[82%] rounded-2xl bg-skyblue px-4 py-3 text-navy shadow-sm">
               <div className="flex items-center gap-3">
                 <span className="relative inline-flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-navy opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-navy" />
                 </span>
-                <span className="text-sm text-slate-200">{processingText}</span>
+                <span className="text-sm text-navy">{processingText}</span>
               </div>
             </div>
           </div>
@@ -219,7 +202,7 @@ export function ChatWindow() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-slate-800 bg-slate-950/90 px-6 py-4 backdrop-blur">
+      <div className="bg-skyblue px-6 py-4 shadow-sm">
         <ChatInput
           onSend={send}
           onDelete={deleteHistory}
