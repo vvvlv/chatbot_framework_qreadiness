@@ -91,12 +91,29 @@ export function ChatWindow() {
   return (
     <div className={`flex h-screen flex-col bg-white`}>
       <header className="sticky top-0 z-20 bg-skyblue px-6 py-4 shadow-sm">
-        <h1 className="text-3xl font-title font-bold text-navy">
-          Quantum Readiness Chatbot
-        </h1>
-        <p className="mt-1 text-sm text-navy font-paragraph">
-          Are you quantum ready? Find out now with a 10-minute conversation.
-        </p>
+        <div className="flex flex-1 justify-between items-center">
+          <div className="flex flex-col">
+            <div className="flex gap-6 items-center">
+              <h1 className="text-3xl font-title font-bold text-navy">
+                Quantum Readiness Chatbot
+              </h1>
+              <span
+                className="inline-flex items-center justify-center rounded-full aspect-square h-6 py-2 text-sm font-title font-bold bg-navy text-white hover:cursor-pointer"
+              >
+                ?
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-teal font-paragraph">
+              Are you quantum ready? Find out now with a 10-minute conversation.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="h-max rounded-xl bg-navy px-6 py-2 font-paragraph font-medium text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
+          >
+            Feedback
+          </button>
+        </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
           {steps.map((step, index) => {
@@ -144,7 +161,7 @@ export function ChatWindow() {
               <p className="text-2xl font-title font-bold text-navy">
                 Click below to start a workflow.
               </p>
-              <p className="mt-2 font-paragraph text-sm text-navy">
+              <p className="mt-2 font-paragraph text-sm text-teal">
                 Start the structured workflow without typing a command.
               </p>
               <button
@@ -153,7 +170,7 @@ export function ChatWindow() {
                 onClick={() => send("assessment")}
                 className="mt-6 w-full rounded-xl bg-teal px-6 py-3 text-white font-paragraph hover:bg-teal/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                Start Quantum Readiness Assessment
+                Quantum Readiness Assessment
               </button>
             </div>
           </div>
@@ -165,13 +182,13 @@ export function ChatWindow() {
 
         {showProcessingIndicator && (
           <div className="flex justify-start">
-            <div className="max-w-[82%] rounded-2xl bg-skyblue px-4 py-3 text-navy shadow-sm">
+            <div className="max-w-[82%] rounded-2xl bg-beige border border-dark-beige text-teal px-4 py-3 shadow-sm">
               <div className="flex items-center gap-3">
                 <span className="relative inline-flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-navy opacity-75" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-navy" />
                 </span>
-                <span className="text-sm text-navy">{processingText}</span>
+                <span className="text-sm text-teal">{processingText}</span>
               </div>
             </div>
           </div>

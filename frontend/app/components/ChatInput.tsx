@@ -11,6 +11,14 @@ interface ChatInputProps {
   uiState: UIState;
 }
 
+const TrashIcon = () => {
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" viewBox="0 0 30 30" fill="none">
+        <path d="M3 6.75H27M10.5 2.25H19.5M12 21.75V12.75M18 21.75V12.75M20.25 27.75H9.75C8.09315 27.75 6.75 26.4069 6.75 24.75L6.0651 8.31245C6.02959 7.46026 6.71087 6.75 7.5638 6.75H22.4362C23.2891 6.75 23.9704 7.46026 23.9349 8.31245L23.25 24.75C23.25 26.4069 21.9069 27.75 20.25 27.75Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    )
+}
+
 export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState }: ChatInputProps) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -67,7 +75,7 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
             type="button"
             disabled={disabled}
             onClick={() => onSend("/cancel", currentQuestion?.prompt_id)}
-            className="rounded-full border border-red-500 px-3 py-1 text-red-500 hover:bg-red-500/10 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-full border border-darker-beige px-3 py-1 text-darker-beige hover:bg-darker-beige/10 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
@@ -89,9 +97,9 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
           type="button"
           disabled={disabled}
           onClick={onDelete}
-          className="rounded-xl bg-white border border-red-500 px-6 py-2 font-paragraph font-medium text-red-500 hover:bg-red-500/20 hover:cursor-pointer disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400"
+          className="rounded-xl bg-white border border-red-500 px-3 py-2 font-paragraph font-medium text-red-500 hover:bg-red-100 hover:cursor-pointer disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400"
         >
-          {"Clear"}
+          <TrashIcon />
         </button>
         <button
           type="submit"

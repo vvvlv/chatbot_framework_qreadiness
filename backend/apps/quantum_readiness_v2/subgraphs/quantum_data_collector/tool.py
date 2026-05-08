@@ -197,7 +197,7 @@ Your main objective is always to get more information from the user about the cu
             "pending_question": None,
             "user_command": None,
             "current_field_key": "a_use_case_identification",
-            "step": 0,
+            "step": 1,
         }
 
         state["currentStep"] = "collecting"
@@ -562,7 +562,7 @@ Output STRICT JSON with this schema:
     def _next_unfilled_key(self, field_status: Dict[str, str]) -> Optional[str]:
         for i in range(len(self.FIELD_SPECS)):
             if field_status[self.FIELD_SPECS[i]["key"]] != "complete":
-                return self.FIELD_SPECS[i]["key"], i
+                return self.FIELD_SPECS[i]["key"], i+1
         return None, None
 
     def _write_information_status(self, stepData: QuantumDataCollectorState) -> str:

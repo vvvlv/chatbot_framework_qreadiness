@@ -68,7 +68,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
         setToolMeta({
           name: event.payload.tool_name || "unknown",
           total: event.payload.total_steps || 0,
-          step: 0,
+          step: 1,
         });
         break;
 

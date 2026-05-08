@@ -17,13 +17,18 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
         className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${
           isUser
             ? "bg-teal text-white"
-            : "bg-skyblue/50 border border-skyblue text-navy"
+            : "bg-beige border border-dark-beige text-teal"
         } ${isStreaming ? "opacity-70" : ""}`}
       >
-        <span
-          // className="prose prose-sm prose-headings:font-title prose-p:font-paragraph prose-a:font-paragraph"
+        {isUser ?
+        (<span>
+          {message.content}
+        </span>)
+        : (<span
+          className="prose prose-sm prose-teal"
           dangerouslySetInnerHTML={{ __html: marked(message.content) }}
-        />
+        />)
+        }
         {isStreaming && (
           <span className="inline-block w-2 h-2 bg-current rounded-full animate-pulse ml-1" />
         )}
