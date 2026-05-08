@@ -8,8 +8,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent } from '../types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-console.log("API_URL :", API_URL);
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+console.log("API_URL :", API_URL || "(same-origin /api)");
 
 export function useChat(sessionId: string, setSessionId: (value: string) => void) {
   const [uiState, setUIState] = useState<UIState>("idle");
@@ -162,7 +162,8 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(`${API_URL}/api/chat`, {
+      const endpoint = API_URL ? `${API_URL}/api/chat` : "/api/chat";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

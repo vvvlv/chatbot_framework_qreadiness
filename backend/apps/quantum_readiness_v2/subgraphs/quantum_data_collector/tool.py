@@ -20,6 +20,7 @@ NEW IDEA :
 """
 
 import json
+import os
 import uuid
 from typing import Any, Dict, List, Optional, TypedDict
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -64,7 +65,11 @@ class QuantumDataCollectorTool(SubgraphProtocol):
     # --- Global variables ---
 
     name = "quantum_data_collector"
-    VALIDATOR_MODEL = "claude-sonnet-4-6" # Keep model lightweight for faster validation loops.
+    # Keep validator model configurable; default to the app/global model choice.
+    VALIDATOR_MODEL = os.getenv(
+        "VALIDATOR_MODEL",
+        os.getenv("LLM_MODEL", "mistral/mistral-small-latest"),
+    )
     FIELD_SPECS: List[FieldSpec] = [
         {
             "key": "a_use_case_identification",

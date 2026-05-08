@@ -1,7 +1,8 @@
-@import "tailwindcss";
-@plugin "@tailwindcss/typography";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
+:root {
   --font-title: "Playfair Display";
   --font-paragraph: "Montserrat", sans-serif;
   --color-navy: #2F4156;
@@ -17,56 +18,60 @@
   .text-balance {
     text-wrap: balance;
   }
-}
 
-@utility prose-teal {
-  --tw-prose-body: var(--color-teal);
-  --tw-prose-headings: var(--color-navy);
-  --tw-prose-lead: var(--color-navy);
-  --tw-prose-links: var(--color-sky-600);
-  --tw-prose-bold: var(--color-navy);
-  --tw-prose-counters: var(--color-teal);
-  --tw-prose-bullets: var(--color-navy);
-  --tw-prose-hr: var(--color-teal);
-  --tw-prose-quotes: var(--color-teal);
-  --tw-prose-quote-borders: var(--color-navy);
-  --tw-prose-captions: var(--color-teal);
-  --tw-prose-code: var(--color-teal);
-  --tw-prose-pre-code: var(--color-teal);
-  --tw-prose-pre-bg: var(--color-dark-beige);
-  --tw-prose-th-borders: var(--color-teal);
-  --tw-prose-td-borders: var(--color-teal);
-  --tw-prose-invert-body: var(--color-teal);
-  --tw-prose-invert-headings: var(--color-teal);
-  --tw-prose-invert-lead: var(--color-teal);
-  --tw-prose-invert-links: var(--color-sky-600);
-  --tw-prose-invert-bold: var(--color-teal);
-  --tw-prose-invert-counters: var(--color-teal);
-  --tw-prose-invert-bullets: var(--color-teal);
-  --tw-prose-invert-hr: var(--color-teal);
-  --tw-prose-invert-quotes: var(--color-teal);
-  --tw-prose-invert-quote-borders: var(--color-teal);
-  --tw-prose-invert-captions: var(--color-teal);
-  --tw-prose-invert-code: var(--color-teal);
-  --tw-prose-invert-pre-code: var(--color-teal);
-  --tw-prose-invert-pre-bg: var(--color-dark-beige);
-  --tw-prose-invert-th-borders: var(--color-teal);
-  --tw-prose-invert-td-borders: var(--color-teal);
+  .prose-teal {
+    --tw-prose-body: var(--color-teal);
+    --tw-prose-headings: var(--color-navy);
+    --tw-prose-lead: var(--color-navy);
+    --tw-prose-links: var(--color-sky-600);
+    --tw-prose-bold: var(--color-navy);
+    --tw-prose-counters: var(--color-teal);
+    --tw-prose-bullets: var(--color-navy);
+    --tw-prose-hr: var(--color-teal);
+    --tw-prose-quotes: var(--color-teal);
+    --tw-prose-quote-borders: var(--color-navy);
+    --tw-prose-captions: var(--color-teal);
+    --tw-prose-code: var(--color-teal);
+    --tw-prose-pre-code: var(--color-teal);
+    --tw-prose-pre-bg: var(--color-dark-beige);
+    --tw-prose-th-borders: var(--color-teal);
+    --tw-prose-td-borders: var(--color-teal);
+    --tw-prose-invert-body: var(--color-teal);
+    --tw-prose-invert-headings: var(--color-teal);
+    --tw-prose-invert-lead: var(--color-teal);
+    --tw-prose-invert-links: var(--color-sky-600);
+    --tw-prose-invert-bold: var(--color-teal);
+    --tw-prose-invert-counters: var(--color-teal);
+    --tw-prose-invert-bullets: var(--color-teal);
+    --tw-prose-invert-hr: var(--color-teal);
+    --tw-prose-invert-quotes: var(--color-teal);
+    --tw-prose-invert-quote-borders: var(--color-teal);
+    --tw-prose-invert-captions: var(--color-teal);
+    --tw-prose-invert-code: var(--color-teal);
+    --tw-prose-invert-pre-code: var(--color-teal);
+    --tw-prose-invert-pre-bg: var(--color-dark-beige);
+    --tw-prose-invert-th-borders: var(--color-teal);
+    --tw-prose-invert-td-borders: var(--color-teal);
+  }
 
-  h1, h2 {
-    font-family: "Playfair Display";
+  .prose-teal h1,
+  .prose-teal h2 {
+    font-family: var(--font-title);
     font-weight: 900;
   }
 
-  h3, h4, p, a {
-    font-family: "Montserrat", sans-serif;
+  .prose-teal h3,
+  .prose-teal h4,
+  .prose-teal p,
+  .prose-teal a {
+    font-family: var(--font-paragraph);
   }
 
-  ol ol {
+  .prose-teal ol ol {
     list-style-type: lower-alpha;
   }
 
-  hr {
+  .prose-teal hr {
     margin-top: 30px;
     margin-bottom: 30px;
   }

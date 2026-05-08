@@ -14,7 +14,7 @@ interface ChatInputProps {
 const TrashIcon = () => {
     return (
       <svg xmlns="http://www.w3.org/2000/svg" width="24" viewBox="0 0 30 30" fill="none">
-        <path d="M3 6.75H27M10.5 2.25H19.5M12 21.75V12.75M18 21.75V12.75M20.25 27.75H9.75C8.09315 27.75 6.75 26.4069 6.75 24.75L6.0651 8.31245C6.02959 7.46026 6.71087 6.75 7.5638 6.75H22.4362C23.2891 6.75 23.9704 7.46026 23.9349 8.31245L23.25 24.75C23.25 26.4069 21.9069 27.75 20.25 27.75Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3 6.75H27M10.5 2.25H19.5M12 21.75V12.75M18 21.75V12.75M20.25 27.75H9.75C8.09315 27.75 6.75 26.4069 6.75 24.75L6.0651 8.31245C6.02959 7.46026 6.71087 6.75 7.5638 6.75H22.4362C23.2891 6.75 23.9704 7.46026 23.9349 8.31245L23.25 24.75C23.25 26.4069 21.9069 27.75 20.25 27.75Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     )
 }
