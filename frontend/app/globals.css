@@ -4,6 +4,7 @@
 @theme {
   --font-title: "Playfair Display";
   --font-paragraph: "Montserrat", sans-serif;
+
   --color-navy: #2F4156;
   --color-teal: #567C8D;
   --color-skyblue: #C8D9E6;
@@ -11,6 +12,8 @@
   --color-dark-beige: #C7AE9D;
   --color-darker-beige: #80604A;
   --color-light-teal: #699FB7;
+
+  --breakpoint-xs: 32rem;
 }
 
 @layer utilities {

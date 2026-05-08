@@ -14,18 +14,18 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${
+        className={`max-w-[82%] h-max rounded-2xl px-4 py-3 shadow-sm ${
           isUser
             ? "bg-teal text-white"
             : "bg-beige border border-dark-beige text-teal"
         } ${isStreaming ? "opacity-70" : ""}`}
       >
         {isUser ?
-        (<span>
+        (<span className="md:text-md text-sm">
           {message.content}
         </span>)
         : (<span
-          className="prose prose-sm prose-teal"
+          className="prose md:prose-base prose-sm prose-teal"
           dangerouslySetInnerHTML={{ __html: marked(message.content) }}
         />)
         }

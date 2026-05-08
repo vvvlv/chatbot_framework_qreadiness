@@ -52,7 +52,7 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
     <div className="space-y-3">
       {currentQuestion && (
         <div className="flex items-center gap-2 text-xs font-paragraph">
-          <span className="inline-flex items-center rounded-full text-navy bg-transparent px-2.5 py-1">
+          <span className="md:inline-flex hidden items-center rounded-full text-navy bg-transparent px-2.5 py-1">
             Awaiting your answer...
           </span>
           <button
@@ -90,21 +90,21 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          className="flex-1 rounded-xl bg-white px-4 py-3 text-navy placeholder:text-navy/50 focus:outline-none focus:ring-2 focus:ring-navy resize-none"
+          className="text-nowrap truncate flex-1 rounded-xl bg-white md:px-4 md:py-3 px-3 py-2 text-navy placeholder:text-navy/50 focus:outline-none focus:ring-2 focus:ring-navy resize-none"
           style={{ minHeight: "44px", maxHeight: "120px" }}
         />
         <button
           type="button"
           disabled={disabled}
           onClick={onDelete}
-          className="rounded-xl bg-white border border-red-500 px-3 py-2 font-paragraph font-medium text-red-500 hover:bg-red-100 hover:cursor-pointer disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400"
+          className="rounded-xl bg-white border border-red-500 px-3 py-2 font-paragraph text-red-500 hover:bg-red-100 hover:cursor-pointer disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400"
         >
           <TrashIcon />
         </button>
         <button
           type="submit"
           disabled={disabled || !input.trim()}
-          className="rounded-xl bg-navy px-6 py-2 font-paragraph font-medium text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="rounded-xl bg-navy xs:px-6 px-3 py-2 md:text-md xs:text-sm text-xs font-paragraph text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {disabled ? "Sending..." : "Send"}
         </button>
