@@ -226,7 +226,7 @@ export function ChatWindow() {
 
         {showProcessingIndicator && (
           <div className="flex justify-start">
-            <div className="max-w-[82%] rounded-2xl bg-beige border border-dark-beige text-teal px-4 py-3 shadow-sm">
+            <div className="max-w-[82%] rounded-2xl bg-beige text-teal px-4 py-3 shadow-sm">
               <div className="flex items-center gap-3">
                 <span className="relative inline-flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-navy opacity-75" />

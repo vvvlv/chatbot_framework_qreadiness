@@ -17,7 +17,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
         className={`max-w-[82%] h-max rounded-2xl px-4 py-3 shadow-sm ${
           isUser
             ? "bg-teal text-white"
-            : "bg-beige border border-dark-beige text-teal"
+            : "bg-beige text-teal"
         } ${isStreaming ? "opacity-70" : ""}`}
       >
         {isUser ?

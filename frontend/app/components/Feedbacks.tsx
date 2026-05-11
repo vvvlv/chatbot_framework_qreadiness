@@ -54,17 +54,17 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
     };
     const [currentFeedback, setCurrentFeedback] = useState<Feedback>(initFeedback(0));
     return (
-        <div className="flex flex-col absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/3 min-w-xs bg-beige rounded-2xl border border-dark-beige px-4 py-4 md:px-6 md:py-6 items-center gap-4">
+        <div className="flex flex-col absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 md:1/3 xs:w-2/5 xs:min-w-xs w-9/10 bg-beige rounded-2xl border border-dark-beige px-4 py-4 md:px-6 md:py-6 items-center gap-4">
             <span className="absolute top-3 right-4 text-navy text-3xl font-bold cursor-pointer" onClick={close}>
                 ×
             </span>
-            <h2 className="font-title font-bold md:text-3xl text-2xl text-navy text-center">
+            <h2 className="font-title font-bold md:text-3xl xs:text-2xl text-xl text-navy text-center">
                 Your Feedback
             </h2>
-            <h4 className="font-title md:text-xl text-lg text-navy text-center">
+            <h4 className="font-title md:text-xl xs:text-lg text-md text-navy text-center">
                 {topicList[currentTopic].title}
             </h4>
-            <p className="font-paragraph text-sm text-teal text-center">
+            <p className="font-paragraph xs:text-sm text-xs text-teal text-center">
                 {topicList[currentTopic].content}
             </p>
             {currentTopic < 4 ? (
