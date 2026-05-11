@@ -6,6 +6,7 @@ import { ChatInput } from './ChatInput';
 import { ToolChrome } from './ToolChrome';
 import { useState, useEffect, useRef } from 'react';
 import { Feedbacks } from './Feedbacks';
+import { HelpPopup } from './HelpPopup';
 
 export function ChatWindow() {
   const isUuid = (value: string): boolean => {
@@ -105,17 +106,20 @@ export function ChatWindow() {
   }, [messages]);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState<boolean>(false);
+  const [showHelpPopup, setShowHelpPopup] = useState<boolean>(false);
 
   return (
     <div className={`flex relative h-screen flex-col bg-white`}>
       <header className="sticky top-0 bg-skyblue px-6 py-4 shadow-sm">
         <div className="flex flex-col xs:flex-row-reverse flex-1 xs:justify-between xs:items-center gap-2">
           <div className="flex-1 xs:flex-none flex flex-row justify-between">
-            <span
-              className="inline-flex xs:hidden items-center justify-center rounded-full aspect-square h-6 py-2 xs:h-0 xs:py-0 text-sm font-title font-bold bg-navy text-white hover:cursor-pointer"
+            <button
+              type="button"
+              onClick={() => setShowHelpPopup(true)}
+              className="inline-flex xs:hidden items-center justify-center rounded-full aspect-square h-6 py-2 xs:h-0 xs:py-0 text-sm font-title font-bold bg-navy text-white hover:bg-navy/80 hover:cursor-pointer"
             >
               ?
-            </span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -131,11 +135,13 @@ export function ChatWindow() {
               <h1 className="md:text-3xl text-2xl font-title font-bold text-navy">
                 Quantum Readiness Chatbot
               </h1>
-              <span
-                className="hidden xs:inline-flex items-center justify-center rounded-full aspect-square h-0 py-0 xs:h-6 xs:py-2 text-sm font-title font-bold bg-navy text-white hover:cursor-pointer"
+              <button
+                type="button"
+                onClick={() => setShowHelpPopup(true)}
+                className="xs:inline-flex hidden items-center justify-center rounded-full aspect-square h-0 py-0 xs:h-6 xs:py-2 text-sm font-title font-bold bg-navy text-white hover:bg-navy/80 hover:cursor-pointer"
               >
                 ?
-              </span>
+              </button>
             </div>
             <p className="mt-1 md:text-sm text-xs text-teal font-paragraph">
               Are you quantum ready? Find out now with a 10-minute conversation.
@@ -201,7 +207,7 @@ export function ChatWindow() {
       <div className="flex-1 space-y-4 overflow-y-auto xs:px-6 px-4 py-5">
         {messages.length === 0 && (
           <div className="h-full flex items-center justify-center">
-            <div className="max-w-md rounded-2xl border border-navy bg-skyblue p-8 text-center shadow-xl">
+            <div className="max-w-md rounded-2xl bg-skyblue p-8 text-center shadow-xl">
               <p className="md:text-2xl text-xl font-title font-bold text-navy">
                 Click below to start a workflow.
               </p>
@@ -278,6 +284,14 @@ export function ChatWindow() {
         <>
           <div className="absolute bg-slate-950/50 inset-0" onClick={() => setShowFeedbackPopup(false)}></div>
           <Feedbacks onSend={sendFeedback} close={() => setShowFeedbackPopup(false)} user_id={userId}/>
+        </>
+      )}
+
+      {/* Help popup */}
+      {showHelpPopup && (
+        <>
+          <div className="absolute bg-slate-950/50 inset-0" onClick={() => setShowHelpPopup(false)}></div>
+          <HelpPopup close={() => setShowHelpPopup(false)}/>
         </>
       )}
     </div>
