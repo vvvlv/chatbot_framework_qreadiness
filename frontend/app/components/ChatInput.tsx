@@ -48,6 +48,8 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
     ? "Write your answer..."
     : "Type your message...";
 
+  const [showClearMessage, setShowClearMessage] = useState<boolean>(false);
+
   return (
     <div className="space-y-3">
       {currentQuestion && (
@@ -97,8 +99,15 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
           type="button"
           disabled={disabled}
           onClick={onDelete}
-          className="rounded-xl bg-white border border-red-500 px-3 py-2 font-paragraph text-red-500 hover:bg-red-100 hover:cursor-pointer disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400"
+          onMouseEnter={() => setShowClearMessage(true)}
+          onMouseLeave={() => setShowClearMessage(false)}
+          className="relative rounded-xl bg-white border border-red-500 px-3 py-2 font-paragraph text-red-500 hover:bg-red-100 hover:cursor-pointer disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400"
         >
+          {showClearMessage && (
+            <span className="absolute rounded-lg px-1 py-1 w-max bg-beige xs:text-xs text-2xs text-teal font-paragraph top-0 -translate-y-full left-1/2 -translate-x-1/2">
+              Clear Message History
+            </span>
+          )}
           <TrashIcon />
         </button>
         <button
