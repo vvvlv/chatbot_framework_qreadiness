@@ -5,6 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ToolChrome } from './ToolChrome';
 import { useState, useEffect, useRef } from 'react';
+import { Feedbacks } from './Feedbacks';
 
 export function ChatWindow() {
   const isUuid = (value: string): boolean => {
@@ -25,6 +26,18 @@ export function ChatWindow() {
   }
   const [sessionId, setSessionId] = useState<string>(initSessionId);
 
+  const [userId] = useState(() => {
+    // Generate or retrieve session ID
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('user_id');
+      if (stored && isUuid(stored)) return stored;
+      const newId = crypto.randomUUID();
+      localStorage.setItem('user_id', newId);
+      return newId;
+    }
+    return crypto.randomUUID();
+  });
+
   const {
     uiState,
     messages,
@@ -35,6 +48,7 @@ export function ChatWindow() {
     currentResponse,
     send,
     deleteHistory,
+    sendFeedback,
   } = useChat(sessionId, setSessionId);
 
   const steps = [
@@ -90,9 +104,11 @@ export function ChatWindow() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState<boolean>(false);
+
   return (
-    <div className={`flex h-screen flex-col bg-white`}>
-      <header className="sticky top-0 z-20 bg-skyblue px-6 py-4 shadow-sm">
+    <div className={`flex relative h-screen flex-col bg-white`}>
+      <header className="sticky top-0 bg-skyblue px-6 py-4 shadow-sm">
         <div className="flex flex-col xs:flex-row-reverse flex-1 xs:justify-between xs:items-center gap-2">
           <div className="flex-1 xs:flex-none flex flex-row justify-between">
             <span
@@ -102,6 +118,9 @@ export function ChatWindow() {
             </span>
             <button
               type="button"
+              onClick={() => {
+                setShowFeedbackPopup(true);
+              }}
               className="h-max rounded-xl bg-navy px-4 md:px-6 py-2 font-paragraph lg:text-md md:text-sm text-xs text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
             >
               Feedback
@@ -159,7 +178,7 @@ export function ChatWindow() {
                   <div className="hidden md:block flex-1">
                     <ToolChrome
                       toolMeta={toolMeta}
-                      onCancel={() => send("/cancel", currentQuestion?.prompt_id)} visible={activeStep === 1}
+                      visible={activeStep === 1}
                     />
                   </div>
                 )}
@@ -172,7 +191,7 @@ export function ChatWindow() {
           <div className="md:hidden block md:h-0 flex-1">
             <ToolChrome
               toolMeta={toolMeta}
-              onCancel={() => send("/cancel", currentQuestion?.prompt_id)} visible={activeStep === 1}
+              visible={activeStep === 1}
             />
           </div>
         )}
@@ -253,6 +272,14 @@ export function ChatWindow() {
           uiState={uiState}
         />
       </div>
+
+      {/* Feedback popup */}
+      {showFeedbackPopup && (
+        <>
+          <div className="absolute bg-slate-950/50 inset-0" onClick={() => setShowFeedbackPopup(false)}></div>
+          <Feedbacks onSend={sendFeedback} close={() => setShowFeedbackPopup(false)} user_id={userId}/>
+        </>
+      )}
     </div>
   );
 }

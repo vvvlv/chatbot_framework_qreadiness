@@ -4,11 +4,10 @@ import { ToolMeta } from '../types';
 
 interface ToolChromeProps {
   toolMeta: ToolMeta | null;
-  onCancel: () => void;
   visible: boolean;
 }
 
-export function ToolChrome({ toolMeta, onCancel, visible }: ToolChromeProps) {
+export function ToolChrome({ toolMeta, visible }: ToolChromeProps) {
   if (!visible) return null;
 
   if (!toolMeta) return null;

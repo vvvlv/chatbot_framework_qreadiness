@@ -6,7 +6,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent } from '../types';
+import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent, Feedback } from '../types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 console.log("API_URL :", API_URL);
@@ -256,7 +256,12 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
       localStorage.setItem('session_id', newSessionId);
     }
     setSessionId(newSessionId);
-  }, [])
+  }, []);
+
+  const sendFeedback = useCallback((feedbacks: Feedback[]) => {
+    // TODO
+    console.log("send feedback to backend (todo) - feedbacks :", feedbacks);
+  }, []);
 
   return {
     uiState,
@@ -268,6 +273,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     lockChatInput,
     send,
     deleteHistory,
+    sendFeedback,
     cancel,
   };
 }
