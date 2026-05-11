@@ -28,6 +28,13 @@ class ChatResponse(BaseModel):
     session_id: UUID
     # TODO : add error field ?
 
+
+class Feedback(BaseModel):
+    user_id: UUID
+    timestamp: int
+    title: str
+    output: str
+
 # TODO : define other models ? What models ?
 #       - a base model for unspecific requests ?
 #       - request for tools (eg RAG tool) ?

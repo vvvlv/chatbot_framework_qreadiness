@@ -108,7 +108,9 @@ async def shutdown():
 
 # Include routes
 from api.routes.chat import router as chat_router
+from api.routes.feedback import router as feedback_router
 app.include_router(chat_router)
+app.include_router(feedback_router)
 
 
 @app.get("/health")

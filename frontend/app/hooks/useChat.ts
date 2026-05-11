@@ -258,9 +258,28 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     setSessionId(newSessionId);
   }, []);
 
-  const sendFeedback = useCallback((feedbacks: Feedback[]) => {
+  const sendFeedback = useCallback(async (feedbacks: Feedback[]) => {
     // TODO
-    console.log("send feedback to backend (todo) - feedbacks :", feedbacks);
+    console.log("Collected feedbacks :", feedbacks);
+    try {
+      const response = await fetch(`${API_URL}/api/sendFeedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(feedbacks),
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, error: ${error}`);
+      }
+      else {
+        console.log("sendFeedback :", response);
+      }
+    } catch (error: any) {
+      setError(error.message || "Failed to send message");
+      setUIState("error");
+    }
   }, []);
 
   return {

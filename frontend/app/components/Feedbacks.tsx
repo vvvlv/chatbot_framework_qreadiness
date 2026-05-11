@@ -53,7 +53,6 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
         };
     };
     const [currentFeedback, setCurrentFeedback] = useState<Feedback>(initFeedback(0));
-    console.log("current feedback:", currentFeedback, "\ncurrent topic:", currentTopic);
     return (
         <div className="flex flex-col absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1/3 min-w-xs bg-beige rounded-2xl border border-dark-beige px-4 py-4 md:px-6 md:py-6 items-center gap-4">
             <span className="absolute top-3 right-4 text-navy text-3xl font-bold cursor-pointer" onClick={close}>
@@ -70,9 +69,8 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
             </p>
             {currentTopic < 4 ? (
                 <StarRating onStar={(value: number) => {
-                    // TODO : fix state not updated after each instruction
                     const tmpCurrentFeedback = {...currentFeedback};
-                    tmpCurrentFeedback.output = value;
+                    tmpCurrentFeedback.output = String(value);
                     setFeedbacks((prev: Feedback[]) => [...prev, tmpCurrentFeedback]);
                     setCurrentFeedback(initFeedback(currentTopic + 1));
                     setCurrentTopic((prev: number) => prev + 1);
