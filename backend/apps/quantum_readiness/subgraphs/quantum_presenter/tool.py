@@ -23,18 +23,12 @@ class QuantumPresenterState(TypedDict, total=False):
     
     # Input data (from analyzer)
     user_industry: str
-    crypto_risk_score: float
-    crypto_risk_level: str
     quantum_opportunity_score: float
     archetype: str
     archetype_narrative: str
     branch_a_topics: Dict
-    branch_b_topics: Dict
     branch_a_score: float
-    branch_b_score: float
     branch_a_band: Dict[str, str]
-    branch_b_band: Dict[str, str]
-    risk_breakdown: dict
     opportunity_breakdown: dict
     unknowns: list
 
@@ -146,7 +140,7 @@ Return JSON:
         # Retrieve benchmark documents via RAG
         print(f"[PRESENTER] Retrieving benchmark documents...")
         benchmark_query = f"""Quantum computing timelines, roadmaps, and qubit estimates for {state["stepData"].get('industry', 'unknown')} industry.
-Include NIST FIPS 203, CISA advisories, and GRI timeline reports."""
+Include practical deployment roadmaps and industry adoption benchmarks."""
         args_rag = {
             "action": "retrieve",
             "query": benchmark_query,
@@ -166,10 +160,9 @@ Include NIST FIPS 203, CISA advisories, and GRI timeline reports."""
         Single-pass function - no user input needed.
         """
         
-        crypto_score = state["stepData"].get("crypto_risk_score", 0)
         opp_score = state["stepData"].get("quantum_opportunity_score", 0)
         archetype = state["stepData"].get("archetype", "Unknown")
-        print(f"[PRESENTER] Scores - Risk: {crypto_score:.1f}, Opportunity: {opp_score:.1f}, Archetype: {archetype}")
+        print(f"[PRESENTER] Scores - Opportunity: {opp_score:.1f}, Archetype: {archetype}")
 
         # process rag tool answer
         if state["common_tool_output"].get("error", False):
@@ -194,7 +187,6 @@ Company context:
 - Archetype: {state['stepData'].get('archetype', 'Unknown')}
 
 Scores:
-- Cryptographic Risk: {state['stepData'].get('crypto_risk_score', 0):.1f}/100 ({state['stepData'].get('crypto_risk_level', 'Unknown')})
 - Quantum Opportunity: {state['stepData'].get('quantum_opportunity_score', 0):.1f}/100
 
 Benchmark documents:
@@ -204,7 +196,7 @@ Generate:
 1. Top 3 priority actions (most urgent first)
 2. For each action, provide:
 - Specific, concrete action item
-- Reference (NIST FIPS 203, CISA advisory, GRI Timeline Report, etc.)
+- Reference (industry report, roadmap, benchmark publication, etc.)
 - Urgency level
 
 Return JSON:
@@ -213,7 +205,7 @@ Return JSON:
     {{
         "action": "...",
         "priority": 1,
-        "reference": "NIST FIPS 203",
+        "reference": "Industry benchmark report",
         "urgency": "high"
     }},
     ...
@@ -256,7 +248,7 @@ Benchmark context:
 Company: 
     - name : {state['stepData'].get('company_name', 'Unknown')}
     - industry : {state['stepData'].get('industry', 'Unknown')}
-Current scores: Risk {state['stepData'].get('crypto_risk_score', 0):.1f}, Opportunity {state['stepData'].get('quantum_opportunity_score', 0):.1f}
+Current opportunity score: {state['stepData'].get('quantum_opportunity_score', 0):.1f}
 
 Provide specific timeline recommendations based on the benchmarks."""
         
@@ -295,17 +287,12 @@ Provide specific timeline recommendations based on the benchmarks."""
         if industry == "unknown":
             industry = "Unknown Sector"
         today = date.today().isoformat()
-        risk = step_data.get("crypto_risk_score", 0.0)
         opp = step_data.get("quantum_opportunity_score", 0.0)
         branch_a_score = step_data.get("branch_a_score", opp)
-        branch_b_score = step_data.get("branch_b_score", max(0.0, 100.0 - risk))
         branch_a_band = (step_data.get("branch_a_band") or {}).get("name", "Unknown")
-        branch_b_band = (step_data.get("branch_b_band") or {}).get("name", "Unknown")
         branch_a_focus = (step_data.get("branch_a_band") or {}).get("recommended_focus", "")
-        branch_b_focus = (step_data.get("branch_b_band") or {}).get("recommended_focus", "")
         archetype = step_data.get("archetype", "Unknown")
         narrative = step_data.get("archetype_narrative", "")
-        risk_breakdown = step_data.get("risk_breakdown", {})
         opp_breakdown = step_data.get("opportunity_breakdown", {})
         unknowns = step_data.get("unknowns", []) # TODO : not in the report for now
         # unknowns_text = ""
@@ -320,8 +307,6 @@ Company: {company} | Sector: {industry} | Date: {today}
 
 1. **SCORES AT A GLANCE**  
     - Branch A (Quantum Competitiveness):     {branch_a_score:.0f} / 100  📈 {branch_a_band}
-    - Branch B (PQC Readiness):               {branch_b_score:.0f} / 100  🔐 {branch_b_band}
-    - Derived Crypto Risk Exposure:           {risk:.0f} / 100  {self._get_risk_emoji(step_data.get('crypto_risk_level', 'low'))} {step_data.get('crypto_risk_level', 'Low').title()}
 
 2. **YOUR ARCHETYPE**  
    → "{archetype}"  
@@ -333,17 +318,10 @@ Company: {company} | Sector: {industry} | Date: {today}
         - Tech/Infrastructure Baseline   {opp_breakdown.get('technical_infrastructure_baseline', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('technical_infrastructure_baseline', {}).get('confidence', 'low'))}
         - Strategic/Org Maturity         {opp_breakdown.get('strategic_organizational_maturity', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('strategic_organizational_maturity', {}).get('confidence', 'low'))}
         - Roadmap & Ecosystem            {opp_breakdown.get('roadmap_ecosystem', {}).get('weighted_points', 0):>4.0f} / 15   {self._confidence_marker(opp_breakdown.get('roadmap_ecosystem', {}).get('confidence', 'low'))}
-    2. Branch B (Cryptographic Risk & PQ Security)
-        - Data & Exposure Profile        {risk_breakdown.get('data_exposure_profile', {}).get('weighted_points', 0):>4.0f} / 35   {self._confidence_marker(risk_breakdown.get('data_exposure_profile', {}).get('confidence', 'low'))}
-        - Migration Readiness            {risk_breakdown.get('migration_readiness', {}).get('weighted_points', 0):>4.0f} / 30   {self._confidence_marker(risk_breakdown.get('migration_readiness', {}).get('confidence', 'low'))}
-        - Supply Chain & Ecosystem       {risk_breakdown.get('supply_chain_ecosystem', {}).get('weighted_points', 0):>4.0f} / 20   {self._confidence_marker(risk_breakdown.get('supply_chain_ecosystem', {}).get('confidence', 'low'))}
-        - Governance                     {risk_breakdown.get('governance', {}).get('weighted_points', 0):>4.0f} / 15   {self._confidence_marker(risk_breakdown.get('governance', {}).get('confidence', 'low'))}
-
 4. **WHERE TO FOCUS NEXT**  
-   You are currently positioned as "{branch_a_band}" on quantum competitiveness and "{branch_b_band}" on cryptographic readiness.  
+   You are currently positioned as "{branch_a_band}" on quantum competitiveness.  
    Your most important focus areas are:  
    - Quantum Competitiveness: {branch_a_focus or 'Define focused pilots and decision milestones.'}  
-   - Cryptographic Readiness: {branch_b_focus or 'Prioritize inventory, migration planning, and governance.'}  
    If you want a practical action plan, the Roadmap Chatbot can translate these priorities into concrete next steps and timeline options.
 """
         
@@ -357,16 +335,6 @@ Company: {company} | Sector: {industry} | Date: {today}
         if level == "medium":
             return "•"
         return ""
-    
-    def _get_risk_emoji(self, level: str) -> str:
-        """Get emoji for risk level."""
-        emoji_map = {
-            "low": "🟢",
-            "medium": "🟡",
-            "high": "🟠",
-            "critical": "🔴",
-        }
-        return emoji_map.get(level, "⚪")
     
     def _get_opportunity_level(self, score: float) -> str:
         """Get opportunity level description."""

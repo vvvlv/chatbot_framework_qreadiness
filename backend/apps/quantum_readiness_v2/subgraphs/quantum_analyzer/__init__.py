@@ -1,1 +1,0 @@
-"""Quantum Readiness Analyzer Tool."""

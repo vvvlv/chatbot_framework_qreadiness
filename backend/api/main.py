@@ -25,7 +25,8 @@ from common_tools.Interrupt_tool import InterruptTool
 from common_tools.RAG_tool import RAGTool
 
 # Apps main graphs (Layer 2)
-from apps.quantum_readiness_v2.maingraph import QuantumReadinessSubgraph
+from apps.quantum_readiness.maingraph import QuantumReadinessSubgraph
+from apps.quantum_readiness.third_services.log_feedback import FeedbackLogger
 
 app = FastAPI(title="Universal Chatbot Framework - Quantum Readiness")
 
@@ -93,9 +94,11 @@ async def startup():
     )
     
     app.state.interaction_logger = InteractionLogger()
+    app.state.feedback_logger = FeedbackLogger()
 
     print(f"\n✓ Core graph built with {len(subgraphRegistry)} subgraph(s)")
     print("✓ Interaction logger initialized")
+    print("✓ Feedback logger initialized")
     print("="*60 + "\n")
 
 
