@@ -127,6 +127,16 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
         lastQuestionTextRef.current = null;
         break;
 
+      case "ai_completion":
+        const userMessage: Message = {
+          id: Date.now().toString(),
+          role: "user",
+          content: event.payload.text || "No text available",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, userMessage]);
+        break;
+
       case "error":
         setUIState("error");
         setError(event.payload.message || "An error occurred");

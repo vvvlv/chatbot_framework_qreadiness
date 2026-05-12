@@ -159,6 +159,7 @@ Your main objective is always to get more information from the user about the cu
         g.add_conditional_edges("command_handler", self.router, {
             END: END,
             "before_analyzer": "before_analyzer",
+            "get_information": "get_information",
             "generate_question": "generate_question"
         })
         g.add_conditional_edges("get_information", self.router, {
@@ -225,7 +226,6 @@ Your main objective is always to get more information from the user about the cu
         state["pending_prompt_id"] = prompt_id
         if state["stepData"].get("pending_question") != None:
             question = state["stepData"]["pending_question"]
-            print(f"[DATA_COLLECTOR] DEBUG - pending question : {question}")
         else:
             information_status = self._write_information_status(state["stepData"])
             extra_rules = ""
@@ -272,7 +272,7 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
             state["stepData"]["pending_question"] = question
             state["stepData"]["message_count"] += 1
 
-        print(f"[DATA_COLLECTOR] DEBUG - used question : {question}")
+        print(f"[DATA_COLLECTOR] DEBUG - used question : {question[:100]}")
         state["common_tool_input"] = {
             "nextNode": "process_answer",
             "args": {
@@ -357,6 +357,16 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
             state["stepData"]["last_user_answer"] = "Can you clarify your last message ?"
             state["stepData"]["iterations_count"][field_key] += 1
             state["nextNode"] = "generate_question"
+            return state
+
+        if command == "/aicompletion":
+            state["pending_prompt_id"] = None
+            state["stepData"]["last_user_answer"] = await self._ai_completion(state["stepData"])
+            await adispatch_custom_event(
+                "ai_completion",
+                {"text": state["stepData"]["last_user_answer"]}
+            )
+            state["nextNode"] = "get_information"
             return state
         
     async def get_information_node(self, state: SubgraphState) -> SubgraphState:
@@ -555,7 +565,7 @@ Output STRICT JSON with this schema:
 
     def _normalized_command(self, text: str) -> Optional[str]:
         v = (text or "").strip().lower()
-        if v in {"/skip", "/clarify", "/cancel"}:
+        if v in {"/skip", "/clarify", "/cancel", "/aicompletion"}:
             return v
         return None
     
@@ -601,3 +611,32 @@ Output STRICT JSON with this schema:
             if message.get("role") == "assistant":
                 return message.get("content", "")
         return "No assistant question found."
+    
+    def _field_desc_str(self) -> str:
+        res = ""
+        for field in self.FIELD_SPECS:
+            res += f"- {field['key']}: {field['explanation']}\n"
+        return res
+    
+    async def _ai_completion(self, stepData: QuantumDataCollectorState) -> str:
+        field_description = self._field_desc_str()
+        field_information = stepData.get("field_information", {})
+        ai_question = self._latest_assistant_question(stepData["messages"])
+        prompt=f"""You want to assess the quantum readiness of your company, so you asked an assistant to provide you a detailed report on the quantum readiness of your company.
+In order to generate a reliable report, this assistant needs your information regarding 4 fields : 
+{field_description}
+You already provided the following information :
+{field_information}
+
+Now, the assistant asked you the following question : {ai_question}
+Invent a response consistent with the information already given.
+Do not include markdown, code fences, or extra keys.
+"""
+        raw = await self._model_gateway.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.VALIDATOR_MODEL,
+            temperature=0.2,
+        )
+        text = (raw or "").strip()
+        print(f"[DATA_COLLECTOR] DEBUG - AI completion : {text}")
+        return text

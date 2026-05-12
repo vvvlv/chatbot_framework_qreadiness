@@ -114,7 +114,7 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
                         <button
                             onClick={() => {
                                 const feedbacksToSend = [...feedbacks];
-                                if (currentFeedback.output) {
+                                if (String(currentFeedback.output).trim().length !== 0) {
                                     feedbacksToSend.push(currentFeedback);
                                 }
                                 if (feedbacksToSend.length > 0) {

@@ -81,6 +81,14 @@ export function ChatInput({ onSend, onDelete, disabled, currentQuestion, uiState
           >
             Cancel
           </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSend("/aicompletion", currentQuestion?.prompt_id)}
+            className="rounded-full border border-dark-beige px-3 py-1 text-dark-beige hover:bg-dark-beige/10 hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            AI completion
+          </button>
         </div>
       )}
       <form onSubmit={handleSubmit} className="flex gap-2">
