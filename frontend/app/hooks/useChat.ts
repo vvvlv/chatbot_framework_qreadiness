@@ -8,8 +8,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent, Feedback } from '../types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-console.log("API_URL :", API_URL);
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+console.log("API_URL :", API_URL || "(same-origin /api)");
 
 export function useChat(sessionId: string, setSessionId: (value: string) => void, userId: string) {
   const [uiState, setUIState] = useState<UIState>("idle");
@@ -172,7 +172,8 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(`${API_URL}/api/chat`, {
+      const endpoint = API_URL ? `${API_URL}/api/chat` : "/api/chat";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -273,7 +274,8 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     // TODO
     console.log("Collected feedbacks :", feedbacks);
     try {
-      const response = await fetch(`${API_URL}/api/sendFeedback`, {
+      const endpoint = API_URL ? `${API_URL}/api/sendFeedback` : "/api/sendFeedback";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

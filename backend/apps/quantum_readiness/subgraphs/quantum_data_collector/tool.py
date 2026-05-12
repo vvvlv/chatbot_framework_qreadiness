@@ -19,6 +19,7 @@ NEW IDEA :
 - Frontend : top-sub-bar with status for each field
 """
 
+import os
 import json
 import uuid
 from typing import Any, Dict, List, Optional, TypedDict
@@ -64,7 +65,10 @@ class QuantumDataCollectorTool(SubgraphProtocol):
     # --- Global variables ---
 
     name = "quantum_data_collector"
-    VALIDATOR_MODEL = "claude-sonnet-4-6" # Keep model lightweight for faster validation loops.
+    VALIDATOR_MODEL = os.getenv(
+        "VALIDATOR_MODEL",
+        os.getenv("LLM_MODEL", "mistral/mistral-small-latest"),
+    )
     FIELD_SPECS: List[FieldSpec] = [
         {
             "key": "a_use_case_identification",
