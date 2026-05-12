@@ -56,7 +56,6 @@ class FeedbackLogger:
                     id BIGSERIAL PRIMARY KEY,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     user_id TEXT NOT NULL,
-                    user_timestamp TEXT NOT NULL,
                     section TEXT NOT NULL,
                     feedback TEXT NULL
                 );
@@ -79,13 +78,11 @@ class FeedbackLogger:
                     """
                     INSERT INTO feedbacks (
                         user_id,
-                        user_timestamp,
                         section,
                         feedback
-                    ) VALUES ($1, $2, $3, $4)
+                    ) VALUES ($1, $2, $3)
                     """,
                     str(feedback.user_id),
-                    str(feedback.timestamp),
                     feedback.title,
                     feedback.output,
                 )

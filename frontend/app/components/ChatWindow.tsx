@@ -50,7 +50,7 @@ export function ChatWindow() {
     send,
     deleteHistory,
     sendFeedback,
-  } = useChat(sessionId, setSessionId);
+  } = useChat(sessionId, setSessionId, userId);
 
   const steps = [
     "Welcome",

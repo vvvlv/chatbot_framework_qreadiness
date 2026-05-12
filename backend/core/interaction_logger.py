@@ -72,6 +72,7 @@ class InteractionLogger:
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     session_id TEXT NOT NULL,
                     event_type TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
                     app_name TEXT NULL,
                     tool_name TEXT NULL,
                     user_message TEXT NULL,
@@ -91,6 +92,7 @@ class InteractionLogger:
                     id BIGSERIAL PRIMARY KEY,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
                     message TEXT NOT NULL,
                     is_resume BOOLEAN NOT NULL DEFAULT FALSE,
                     prompt_id TEXT NULL,
@@ -107,6 +109,7 @@ class InteractionLogger:
         *,
         session_id: str,
         event_type: str,
+        user_id: str,
         app_name: Optional[str] = None,
         tool_name: Optional[str] = None,
         user_message: Optional[str] = None,
@@ -121,14 +124,16 @@ class InteractionLogger:
                 INSERT INTO interaction_events (
                     session_id,
                     event_type,
+                    user_id,
                     app_name,
                     tool_name,
                     user_message,
                     payload_json
-                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
                 """,
                 session_id,
                 event_type,
+                user_id,
                 app_name,
                 tool_name,
                 user_message,
@@ -145,7 +150,7 @@ class InteractionLogger:
         pool = await self._ensure_pool()
         if session_id:
             query = """
-                SELECT id, created_at, session_id, event_type, app_name, tool_name, user_message, payload_json
+                SELECT id, created_at, session_id, event_type, user_id, app_name, tool_name, user_message, payload_json
                 FROM interaction_events
                 WHERE session_id = $1
                 ORDER BY id DESC
@@ -154,7 +159,7 @@ class InteractionLogger:
             params = (session_id, limit)
         else:
             query = """
-                SELECT id, created_at, session_id, event_type, app_name, tool_name, user_message, payload_json
+                SELECT id, created_at, session_id, event_type, user_id, app_name, tool_name, user_message, payload_json
                 FROM interaction_events
                 ORDER BY id DESC
                 LIMIT $1
@@ -178,6 +183,7 @@ class InteractionLogger:
                     "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                     "session_id": row["session_id"],
                     "event_type": row["event_type"],
+                    "user_id": row["user_id"],
                     "app_name": row["app_name"],
                     "tool_name": row["tool_name"],
                     "user_message": row["user_message"],
@@ -190,6 +196,7 @@ class InteractionLogger:
         self,
         *,
         session_id: str,
+        user_id,
         message: str,
         is_resume: bool = False,
         prompt_id: Optional[str] = None,
@@ -206,13 +213,15 @@ class InteractionLogger:
                 """
                 INSERT INTO user_messages (
                     session_id,
+                    user_id,
                     message,
                     is_resume,
                     prompt_id,
                     metadata
-                ) VALUES ($1, $2, $3, $4, $5::jsonb)
+                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
                 """,
                 session_id,
+                user_id,
                 safe_message,
                 is_resume,
                 prompt_id,

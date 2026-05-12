@@ -44,7 +44,6 @@ export interface QuestionEvent {
 
 export interface Feedback {
   user_id: string;
-  timestamp: number;
   title: string;
   output: number | string;
 }

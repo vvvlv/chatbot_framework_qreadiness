@@ -9,7 +9,6 @@ interface FeedbackProps {
 }
 
 export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
-    const timestamp = Date.now();
     const topicList = [
         {
             "title": "User Experience",
@@ -47,7 +46,6 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
     const initFeedback = (idx: number) => {
         return {
             user_id: user_id,
-            timestamp: timestamp,
             title: topicList[idx].title,
             output: topicList[idx].default,
         };

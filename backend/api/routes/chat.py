@@ -29,6 +29,7 @@ async def _log_event_safe(
     *,
     session_id: str,
     event_type: str,
+    user_id: str,
     user_message: Optional[str] = None,
     payload: Optional[Dict[str, Any]] = None,
 ) -> None:
@@ -38,6 +39,7 @@ async def _log_event_safe(
         await logger.log_event(
             session_id=session_id,
             event_type=event_type,
+            user_id=user_id,
             user_message=user_message,
             payload=payload or {},
         )
@@ -50,6 +52,7 @@ async def _log_user_message_safe(
     logger,
     *,
     session_id: str,
+    user_id: str,
     message: str,
     is_resume: bool,
     prompt_id: Optional[str] = None,
@@ -60,6 +63,7 @@ async def _log_user_message_safe(
     try:
         await logger.log_user_message(
             session_id=session_id,
+            user_id=user_id,
             message=message,
             is_resume=is_resume,
             prompt_id=prompt_id,
@@ -69,9 +73,9 @@ async def _log_user_message_safe(
         print(f"[CHAT_ROUTE] ⚠ Failed to log user_message row: {exc}")
 
 
-def _client_key(request: Request, session_id: str) -> str:
+def _client_key(request: Request, user_id: str) -> str:
     ip = (request.client.host if request.client else "unknown").strip()
-    session_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:12]
+    session_hash = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:12]
     return f"{ip}:{session_hash}"
 
 
@@ -89,8 +93,9 @@ def _enforce_rate_limit(bucket_key: str) -> None:
 async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
     """Chat endpoint with SSE streaming and interrupt/resume support."""
     session_id = str(req.session_id)
+    user_id = str(req.user_id)
     interaction_logger = _get_interaction_logger(request)
-    _enforce_rate_limit(_client_key(request, session_id))
+    _enforce_rate_limit(_client_key(request, user_id))
     config = {"configurable": {"thread_id": session_id}}
 
     # Get graph from app state (set at startup)
@@ -105,6 +110,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             interaction_logger,
             session_id=session_id,
             event_type="resume_payload_rejected",
+            user_id=user_id,
             payload={"reason": "too_large"},
         )
         raise HTTPException(status_code=413, detail="Resume payload too large")
@@ -114,6 +120,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
         await _log_user_message_safe(
             interaction_logger,
             session_id=session_id,
+            user_id=user_id,
             message=req.message,
             is_resume=True,
             prompt_id=req.prompt_id,
@@ -123,6 +130,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             interaction_logger,
             session_id=session_id,
             event_type="user_resume_command",
+            user_id=user_id,
             user_message="/cancel",
             payload={"command": "/cancel"},
         )
@@ -132,6 +140,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
                 graph,
                 input_,
                 config,
+                user_id,
                 interaction_logger=interaction_logger,
             ),
             media_type="text/event-stream",
@@ -148,6 +157,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
                 interaction_logger,
                 session_id=session_id,
                 event_type="resume_prompt_id_rejected",
+                user_id=user_id,
                 payload={
                     "expected_prompt_id": pending_prompt_id,
                     "provided_prompt_id": req.prompt_id,
@@ -161,12 +171,14 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             interaction_logger,
             session_id=session_id,
             event_type="user_resume_message",
+            user_id=user_id,
             user_message=req.message,
             payload={"prompt_id": req.prompt_id},
         )
         await _log_user_message_safe(
             interaction_logger,
             session_id=session_id,
+            user_id=user_id,
             message=req.message,
             is_resume=True,
             prompt_id=req.prompt_id,
@@ -178,12 +190,14 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             interaction_logger,
             session_id=session_id,
             event_type="user_message",
+            user_id=user_id,
             user_message=req.message,
             payload={"is_new_turn": True},
         )
         await _log_user_message_safe(
             interaction_logger,
             session_id=session_id,
+            user_id=user_id,
             message=req.message,
             is_resume=False,
             metadata={"kind": "new_turn"},
@@ -199,6 +213,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             graph,
             input_,
             config,
+            user_id,
             interaction_logger=interaction_logger,
         ),
         media_type="text/event-stream",

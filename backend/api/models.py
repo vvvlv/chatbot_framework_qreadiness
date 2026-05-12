@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
     """Chat request model."""
 
     message: str = Field(min_length=1, max_length=4000)
+    user_id: UUID
     session_id: UUID
     prompt_id: Optional[str] = Field(default=None, max_length=128)
 
@@ -31,7 +32,6 @@ class ChatResponse(BaseModel):
 
 class Feedback(BaseModel):
     user_id: UUID
-    timestamp: int
     title: str
     output: str
 

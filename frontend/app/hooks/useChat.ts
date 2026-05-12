@@ -11,7 +11,7 @@ import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent, Feedback } from '.
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 console.log("API_URL :", API_URL);
 
-export function useChat(sessionId: string, setSessionId: (value: string) => void) {
+export function useChat(sessionId: string, setSessionId: (value: string) => void, userId: string) {
   const [uiState, setUIState] = useState<UIState>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
   const [toolMeta, setToolMeta] = useState<ToolMeta | null>(null);
@@ -169,6 +169,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
         },
         body: JSON.stringify({
           message: text,
+          user_id: userId,
           session_id: sessionId,
           prompt_id: promptId,
         }),

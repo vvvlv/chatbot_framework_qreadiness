@@ -42,6 +42,7 @@ async def stream_graph_events(
     graph,
     input_,
     config: Dict,
+    user_id: str,
     interaction_logger=None,
 ) -> AsyncIterator[str]:
     """
@@ -78,6 +79,7 @@ async def stream_graph_events(
             await interaction_logger.log_event(
                 session_id=session_id,
                 event_type=event_type,
+                user_id=user_id,
                 app_name=app_name,
                 tool_name=tool_name,
                 payload=payload or {},
