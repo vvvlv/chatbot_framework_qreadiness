@@ -21,11 +21,12 @@ class QuantumAnalyzerState(TypedDict, total=False):
     """StepData for Quantum Readiness Analyzer Tool."""
     
     # Input data (from data collector)
-    user_industry: str
     branch_a_topics: Dict
-    quantum_opportunity_score: float  # 0-100
-    
-    # Archetype
+
+    # Output - Score
+    quantum_opportunity_score: float # 0-100
+
+    # Output - Archetype
     archetype: str
     archetype_narrative: str
 
@@ -62,7 +63,6 @@ class QuantumAnalyzerTool(SubgraphProtocol):
         print(f"[ANALYZER] Input data keys: {list(state['stepData'].keys())}")
 
         stepData : QuantumAnalyzerState = {
-            "user_industry": state["stepData"]["user_industry"],
             "branch_a_topics": state["stepData"]["branch_a_topics"],
             "quantum_opportunity_score": None,
             "archetype": None,
@@ -93,14 +93,72 @@ class QuantumAnalyzerTool(SubgraphProtocol):
         """
         
         branch_a_topics = state["stepData"].get("branch_a_topics", {}) or {}
-        branch_a_weights = {
-            "use_case_identification": 35,
-            "technical_infrastructure_baseline": 25,
-            "strategic_organizational_maturity": 25,
-            "roadmap_ecosystem": 15,
+        # TODO : complete criteria
+        branch_a_specs = {
+            "use_case_identification": {
+                "industry": {
+                    "weight": 7,
+                    "question": "To what extent does the organisation's industry depends on quantum ?",
+                    "criteria": {
+                        "min_score_cases": ["industry not specified", "no dependances with quantum"],
+                        "max_score_cases": ["quantum-related industry"],
+                    },
+                },
+                "core_compute_problem": {
+                    "weight": 7,
+                    "question": "To what extent quantum can be used in this problem ?",
+                    "criteria": {},
+                },
+                "optimization": {
+                    "weight": 14,
+                    "question": "To what extent does the organisation run large-scale combinatorial optimization problems (logistics routing, scheduling, portfolio construction, resource allocation) ?",
+                    "criteria": {},
+                },
+                "intrinsic_quantum": {
+                    "weight": 14,
+                    "question": "To what extent does the organisation conduct molecular simulation, materials science, drug discovery research or any other research that has an intrinsic quantum nature ?",
+                    "criteria": {},
+                },
+            },
+            "technical_infrastructure_baseline": {
+                "classical_maturity": {
+                    "weight": 11,
+                    "question": "To what extent has the organisation currently implemented state-of-the-art classical solutions for the problems they are trying to solve ?",
+                    "criteria": {},
+                },
+                "internal_expertise": {
+                    "weight": 6,
+                    "question": "To what extent is the organisation self-sufficient regarding quantum internal expertise ?",
+                    "criteria": {},
+                },
+            },
+            "strategic_organizational_maturity": {
+                "adoption_posture": {
+                    "weight": 14,
+                    "question": "To what extent does the organization adopt a first-mover approach regarding quantum technologies ?",
+                    "criteria": {},
+                },
+                "ip_sensitivity": {
+                    "weight": 11,
+                    "question": "How sensitive is the IP of the organisation regarding their data, algorithms, partners, etc. ?",
+                    "criteria": {},
+                },
+            },
+            "roadmap_ecosystem": {
+                "internal_pilots": {
+                    "weight": 10,
+                    "question": "To what extent has the organisation conducted internal assessments or pilots related to quantum computing use cases ?",
+                    "criteria": {},
+                },
+                "ecosystem_partnerships": {
+                    "weight": 6,
+                    "question": "To what extent does the organisation takes part to any quantum ecosystem networks, consortia, or academic partnerships ?",
+                    "criteria": {},
+                },
+            },
         }
 
-        branch_a_result = await self._score_branch("Branch A", branch_a_topics, branch_a_weights)
+        branch_a_result = await self._score_branch(branch_a_topics, branch_a_specs)
         branch_a_score = float(branch_a_result["total"])
         quantum_opportunity_score = branch_a_score
         state["stepData"]["quantum_opportunity_score"] = quantum_opportunity_score
@@ -117,7 +175,7 @@ class QuantumAnalyzerTool(SubgraphProtocol):
         print(f"[ANALYZER] Determined archetype: {archetype}")
         self._log_model_quality_debug_analyzer(
             branch_a_topics=branch_a_topics,
-            branch_a_weights=branch_a_weights,
+            branch_a_weights=branch_a_specs,
             branch_a_result=branch_a_result,
             branch_a_score=branch_a_score,
             archetype=archetype,
@@ -192,20 +250,73 @@ Be specific and actionable."""
 
     async def _score_branch(
         self,
-        branch_name: str,
-        topics: Dict[str, Any],
-        weights: Dict[str, int],
+        topics: Dict[str, Dict],
+        specs: Dict[str, Dict],
     ) -> Dict[str, Any]:
-        prompt = f"""Score each topic for {branch_name} from 0 to its max weight.
-Output STRICT JSON:
-{{
-"scores": [
-{{"topic":"topic_key","score":12,"reason":"short reason"}},
-...
-]
-}}
-Topics with weights and answers:
-{json.dumps([{"topic": k, "max_score": w, "answer": topics.get(k)} for k, w in weights.items()], ensure_ascii=False)}
+        output_format = {
+            "type": "array",
+            "items": {
+                "oneOf": [
+                    {
+                        "type": object,
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": field,
+                                "description": "ID of the field"
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": content.keys(),
+                                            "description": f"ID of the rubric inside the field {field}"
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                            "description": "score for the rubric"
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                            "description": "A short sentence that explain why this score."
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                                "description": "the scores for all rubric of the field"
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    }
+                    for field, content in specs.items()
+                ]
+            }
+        }
+        prompt = f"""You are a professional quantum assistant that helps managers to assess the quantum readiness of their company/structure.
+You already collected the needed information from the manager. Each piece of information belongs to a specific rubric (e.g. 'industry' or 'classical_maturity'). Each rubric belongs to a main field (e.g. 'a_use_case_identification' or 'a_roadmap_ecosystem').
+Here is the collected information :
+{topics}
+
+Your goal now is to assign a score for each rubric. To do this, I provide you a list of specifications for each rubric, with the following attributes :
+- "weight": The max score for the rubric. Your score must always be between 0 and the weight.
+- "question": The question the score should answer.
+- "criteria": A list of possible indications to guide your scoring. It can be empty.
+Here are the specifications :
+{specs}
+
+How you should assign a score to a rubric :
+1) Analyse the collected information for the specific rubric
+2) You can take the collected information from other rubrics into account as context.
+3) Give a score from 0 to the weight of the rubric that answer the question of the rubric, based on the criteria of the rubric if they exist.
+4) Explain how you chose the score.
+
+Output STRICT JSON with this format :
+{output_format}
 """
         parsed_scores: Dict[str, Dict[str, Any]] = {}
         raw_model_output = ""
@@ -215,54 +326,76 @@ Topics with weights and answers:
                 temperature=0.1,
             )
             raw_model_output = (raw or "").strip()
-            start = raw_model_output.find("{")
-            end = raw_model_output.rfind("}") + 1
-            data = json.loads(raw_model_output[start:end]) if start >= 0 and end > start else {}
-            for item in data.get("scores", []):
-                if isinstance(item, dict) and item.get("topic"):
-                    parsed_scores[str(item["topic"])] = {
-                        "score": int(item.get("score", 0)),
-                        "reason": str(item.get("reason", "")),
-                    }
+            start = raw_model_output.find("[")
+            end = raw_model_output.rfind("]") + 1
+            data = json.loads(raw_model_output[start:end]) if start >= 0 and end > start else []
+            for item in data:
+                if isinstance(item, dict) and item.get("field") and item["field"] in specs.keys() and item.get("rubrics"):
+                    parsed_scores[str(item["field"])] = {}
+                    for item2 in item.get("rubrics"):
+                        if isinstance(item2, dict) and item2.get("rubric") and item2["rubric"] in specs[item["field"]].keys() and item2.get("score"):
+                            parsed_scores[str(item["field"])][str(item2["rubric"])] = {
+                                "score": int(item2.get("score", 0)),
+                                "reason": str(item2.get("reason", "")),
+                            }
+                        else:
+                            print("[ANALYZER] ⚠ INFO - invalid rubric item in scoring AI output")
+                else:
+                    print("[ANALYZER] ⚠ INFO - invalid field item in scoring AI output")
         except Exception:
             parsed_scores = {}
             raw_model_output = raw_model_output or "ERROR: failed to parse model scoring output."
-
-        topic_scores = {}
+        
+        field_scores = {}
         total = 0.0
-        scoring_trace = {}
-        for topic, max_score in weights.items():
-            answer = topics.get(topic)
-            has_answer = bool(str(answer).strip()) if answer is not None else False
-            fallback = int(round(max_score * 0.5)) if has_answer else 0
-            score = parsed_scores.get(topic, {}).get("score", fallback)
-            score = max(0, min(int(max_score), int(score)))
-            used_fallback = topic not in parsed_scores
-            topic_scores[topic] = {
-                "score": score,
-                "max_score": max_score,
-                "details": answer or "No response",
-                "reason": parsed_scores.get(topic, {}).get("reason", ""),
-                "confidence": "medium" if has_answer else "low",
+        field_trace = {}
+        for field, rubrics in specs.items():
+            score_field = 0
+            weight_field = 0
+            missing_rubrics = 0
+            missing_field = field not in parsed_scores
+            field_trace[field] = {}
+            for rubric, spec in rubrics.items():
+                weight = spec["weight"]
+                weight_field += weight
+                answer = topics.get(field, {}).get(rubric, "")
+                has_answer = bool(str(answer).strip()) if answer is not None else False
+                fallback = int(round(weight * 0.5)) if has_answer else 0
+                score = parsed_scores.get(field, {}).get(rubric, {}).get("score", fallback)
+                score = max(0, min(int(weight), int(score)))
+                used_fallback = field not in parsed_scores or rubric not in parsed_scores[field]
+                if used_fallback:
+                    missing_rubrics += 1
+                score_field += score
+                total += score
+                field_trace[field][rubric] = {
+                    "input_answer": answer or "",
+                    "parsed_score": parsed_scores.get(field, {}).get(rubric, {}).get("score"),
+                    "reason": parsed_scores.get(field, {}).get(rubric, {}).get("reason", ""),
+                    "fallback_score": fallback,
+                    "final_score": score,
+                    "used_fallback": used_fallback,
+                    "confidence": "medium" if has_answer else "low",
+                }
+            confidence = ""
+            if missing_field:
+                confidence = "0%"
+            else:
+                confidence = str(int(75 - (missing_rubrics/len(specs[field].keys())*75))) + "%"
+            field_scores[field] = {
+                "score": score_field,
+                "max_score": weight_field,
+                "confidence": confidence,
             }
-            scoring_trace[topic] = {
-                "input_answer": answer or "",
-                "parsed_score": parsed_scores.get(topic, {}).get("score"),
-                "fallback_score": fallback,
-                "final_score": score,
-                "used_fallback": used_fallback,
-            }
-            total += score
         return {
             "total": total,
-            "topic_scores": topic_scores,
+            "topic_scores": field_scores,
             "debug": {
-                "branch_name": branch_name,
-                "weights": weights,
+                "specs": specs,
                 "raw_model_output": raw_model_output,
                 "parsed_scores": parsed_scores,
-                "scoring_trace": scoring_trace,
-            },
+                "scoring_trace": field_trace,
+            }
         }
     
     def _branch_a_band(self, score: float) -> Dict[str, str]:
@@ -279,7 +412,7 @@ Topics with weights and answers:
     def _log_model_quality_debug_analyzer(
         self,
         branch_a_topics: Dict[str, Any],
-        branch_a_weights: Dict[str, int],
+        branch_a_weights: Dict[str, Any],
         branch_a_result: Dict[str, Any],
         branch_a_score: float,
         archetype: str,

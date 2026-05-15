@@ -41,13 +41,13 @@ class QuantumDataCollectorState(TypedDict, total=False):
     """stepData for the field-filling collector."""
     
     messages: list[Dict]
-    field_status: Dict[str, str] # field_key -> "empty" | "in_progress" | "complete"
+    field_status: Dict[str, Dict[str, str]] # field_key -> rubric -> "empty" | "in_progress" | "complete"
     last_user_answer: Optional[str]
-    message_count: int # number of AI + user messages
-    iterations_count: Dict[str, int]  # field_key -> number of AI questions on the field
-    field_information: Dict[str, str] # field_key -> user information about the field
-    user_command: Optional[str] # potential inputed command between /cancel, /skip and /clarify
+    iterations_count: Dict[str, Dict[str, int]]  # field_key -> rubric -> number of AI questions on the field
+    field_information: Dict[str, Dict[str, str]] # field_key -> rubric -> user information about the field
+    user_command: Optional[str] # potential inputed command between /cancel, /skip, /clarify and /aicompletion
     current_field_key: Optional[str]
+    current_rubric: Optional[str]
     pending_question: Optional[str]
     consumed_prompt_ids: List[str]
     last_validation_reason: Optional[str]
@@ -69,62 +69,55 @@ class QuantumDataCollectorTool(SubgraphProtocol):
         "VALIDATOR_MODEL",
         os.getenv("LLM_MODEL", "mistral/mistral-small-latest"),
     )
-    FIELD_SPECS: List[FieldSpec] = [
-        {
-            "key": "a_use_case_identification",
-            "explanation": "Branch A topic: use case identification (industry, computationally intensive problems, optimization, intrinsic quantum use cases, classical bottlenecks).",
-            "default_question": "Quantum Competitiveness - Use Case Identification: Tell us your industry and the most computationally intensive problems where quantum could matter, including optimization or intrinsic quantum research, and any current classical bottlenecks.",
-            "answer_criteria": "Provide industry context plus at least one concrete high-compute or quantum-relevant use case.",
-            "example_answers": ["Healthcare: drug discovery simulation and route optimization with long runtimes.", "Finance: portfolio optimization bottlenecks in intraday decisions."],
+    SLOTS_BY_FIELD: Dict[str, Dict] = {
+        "a_use_case_identification": {
+            "description": "Industry, computationally intensive problems, optimization, intrinsic quantum use cases, classical bottlenecks",
+            "rubrics": {
+                "industry": "Which industry or sector the organization operates in.",
+                "core_compute_problem": "What are the main computationally intensive business problems.",
+                "optimization": "If they run large-scale combinatorial optimization problems (logistics routing, scheduling, portfolio construction, resource allocation).",
+                "intrinsic_quantum": "If they conduct molecular simulation, materials science, drug discovery research or any other research that has an intrinsic quantum nature.",
+                # "classical_bottleneck": " conduct molecular simulation, materials science, drug discovery research or any other research that has an intrinsic quantum nature.",
+            },
         },
-        {
-            "key": "a_technical_infrastructure_baseline",
-            "explanation": "Branch A topic: technical and infrastructure baseline (HPC/cloud footprint, classical baselines, vendor relationships, internal expertise).",
-            "default_question": "Quantum Competitiveness - Technical & Infrastructure Baseline: Summarize your compute footprint, classical solution maturity, any quantum vendor relationships, and whether you have internal quantum expertise.",
-            "answer_criteria": "Describe current technical baseline and capability level across infrastructure, tooling, and expertise.",
-            "example_answers": [
-                "Hybrid HPC + cloud, mature classical optimizers, early vendor pilots, small internal team.",
-                "Cloud-only stack, no vendor ties, external partners required for quantum work.",
-            ],
+        "a_technical_infrastructure_baseline": {
+            "description": "HPC/cloud footprint, classical baselines, vendor relationships, internal expertise",
+            "rubrics": {
+                # "compute_footprint": "Where workloads run (cloud, HPC, hybrid) and rough scale.",
+                "classical_maturity": "What are currently implemented state-of-the-art classical solutions for the problems they are trying to solve",
+                # "vendor_landscape": "Existing relationships with quantum hardware or software vendors",
+                "internal_expertise": "In-house quantum-capable people or reliance on partners.",
+            },
         },
-        {
-            "key": "a_strategic_organizational_maturity",
-            "explanation": "Branch A topic: strategic and organizational maturity (adoption posture, IP sensitivity, dedicated budget).",
-            "default_question": "Quantum Competitiveness - Strategic & Organizational Maturity: Describe your technology adoption posture, IP sensitivity, and whether budget for quantum exploration is dedicated or competing with other initiatives.",
-            "answer_criteria": "Provide posture, governance/budget context, and strategic readiness indicators.",
-            "example_answers": [
-                "Second-mover posture, strong IP portfolio, dedicated exploration budget.",
-                "Wait-and-see posture, limited IP pressure, no dedicated budget.",
-            ],
+        "a_strategic_organizational_maturity": {
+            "description": "Adoption posture, IP sensitivity, dedicated budget",
+            "rubrics": {
+                "adoption_posture": "Technology adoption posture toward emerging tech (first mover, second mover, wait-and-see).",
+                "ip_sensitivity": "Sensitivity of IP or data to new algorithms or partners.",
+                # "budget_model": "Whether exploration budget is dedicated, shared, or absent.",
+            },
         },
-        {
-            "key": "a_roadmap_ecosystem",
-            "explanation": "Branch A topic: roadmap and ecosystem (internal pilots, ecosystem participation, competitor monitoring).",
-            "default_question": "Quantum Competitiveness - Roadmap & Ecosystem: Describe any internal quantum assessments/pilots, ecosystem or academic partnerships, and how you track competitor activity.",
-            "answer_criteria": "Include execution roadmap signals and ecosystem engagement level.",
-            "example_answers": [
-                "Active pilots, consortium membership, and quarterly competitor intelligence.",
-                "No pilots yet, limited ecosystem ties, informal monitoring only.",
-            ],
+        "a_roadmap_ecosystem": {
+            "description": "Internal pilots, ecosystem participation, competitor monitoring",
+            "rubrics": {
+                "internal_pilots": "Whether they have conducted any internal assessments or pilots related to quantum computing use cases.",
+                "ecosystem_partnerships": "Participation to any quantum ecosystem networks, consortia, or academic partnerships.",
+                # "competitors": "Does their sector have early quantum adopters among competitors — Are they monitoring their activity",
+            },
         },
-    ]
+    }
     SYSTEM_PROMPT = f"""
 SYSTEM PROMPT : 
 You are a professional quantum assistant that helps managers to assess the quantum readiness of their company/structure.
 Your first step is to gather the information necessary for this assessment.
-More precisely, your goal is to identify the user's information according to 4 fields, described by the following attributes :
-- "key" : a string to identify the field
-- "explanation": an explanation of the field
-- "default question": an exemple question to ask to get more information about the field
-- "answer_criteria": what information is needed to consider the field as complete
-- "example_answers": a list of example user answers that fill the information needed for the field
-
+More precisely, your goal is to identify the user's information according to 4 fields. Each field has several rubrics, each corresponding to a basic piece of information.
 Here are the 4 fields :
 
-{json.dumps(FIELD_SPECS)}
+{json.dumps(SLOTS_BY_FIELD)}
 
-I will update you on the information status for each field after every user message, and tell you what is the current field to focus on.
-Your main objective is always to get more information from the user about the current field, but you can help them to better understand technical terms if they need.
+I will update you on the information status for each rubric after every user message, and tell you what is the current rubric to focus on.
+Your main objective is always to get more information from the user about the current rubric, but you can help them to better understand technical terms if they need.
+Don't ask several questions in a single message. If necessary, start with the most general question.
 """
     TOTAL_STEPS = 4
     MAX_RETRIES_PER_FIELD = 5
@@ -192,17 +185,17 @@ Your main objective is always to get more information from the user about the cu
         
         stepData : QuantumDataCollectorState = {
             "messages": last_5_messages,
-            "field_status": {field["key"]: "empty" for field in self.FIELD_SPECS},
+            "field_status": {field: {rubric: "empty" for rubric in content["rubrics"].keys()} for field, content in self.SLOTS_BY_FIELD.items()},
             "last_user_answer": None,
-            "message_count": 0,
-            "iterations_count": {field["key"]: 0 for field in self.FIELD_SPECS},
-            "field_information": {field["key"]: "" for field in self.FIELD_SPECS},
+            "iterations_count": {field: {rubric: 0 for rubric in content["rubrics"].keys()} for field, content in self.SLOTS_BY_FIELD.items()},
+            "field_information": {field: {rubric: "" for rubric in content["rubrics"].keys()} for field, content in self.SLOTS_BY_FIELD.items()},
             "consumed_prompt_ids": [],
             "last_validation_reason": None,
             "pending_question": None,
             "user_command": None,
             "current_field_key": "a_use_case_identification",
             "step": 1,
+            "current_rubric": "industry",
         }
 
         state["currentStep"] = "collecting"
@@ -232,9 +225,10 @@ Your main objective is always to get more information from the user about the cu
             question = state["stepData"]["pending_question"]
         else:
             information_status = self._write_information_status(state["stepData"])
+            print(f"[DATA COLLECTOR] DEBUG - information status : {information_status}")
             extra_rules = ""
-            if state["stepData"]["iterations_count"][state['stepData']['current_field_key']] == 4:
-                extra_rules = """It is your last question to get information about the current field.
+            if state["stepData"]["iterations_count"][state['stepData']['current_field_key']][state['stepData']['current_rubric']] == 4:
+                extra_rules = """It is your last question to get information about the current rubric.
 If the user strays too far from the topic, warn them that you're going to switch to a next field at next question.
 """
             if state["stepData"].get("last_user_answer", None) == None:
@@ -243,9 +237,10 @@ INFORMATION STATUS :
 
 {information_status}
 
-CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
+CURRENT FIELD : {state['stepData'].get('current_field_key', 'No current field key')}
+CURRENT RUBRIC : {state['stepData'].get('current_rubric', 'No current rubric')}
 
-INSTRUCTION : generate a question to get more information from the user about the current field.
+INSTRUCTION : generate a question to get more information from the user about the current rubric.
 """
             else:
                 system_message = f"""
@@ -253,7 +248,8 @@ INFORMATION STATUS :
 
 {information_status}
 
-CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
+CURRENT FIELD : {state['stepData'].get('current_field_key', 'No current field key')}
+CURRENT RUBRIC : {state['stepData'].get('current_rubric', 'No current rubric')}
 
 INSTRUCTION : Generate a message based on your system prompt, the last user message and the message history.
 {extra_rules}
@@ -274,7 +270,6 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
             question = (question or "").strip()
             state["stepData"]["messages"].append({"role": "assistant", "content": question})
             state["stepData"]["pending_question"] = question
-            state["stepData"]["message_count"] += 1
 
         print(f"[DATA_COLLECTOR] DEBUG - used question : {question[:100]}")
         state["common_tool_input"] = {
@@ -294,7 +289,6 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
         resume_prompt_id = None
         prompt_id = state.get("pending_prompt_id")
         answer = state["common_tool_output"].get("answer")
-        state["stepData"]["message_count"] += 1
         if isinstance(answer, dict):
             raw_answer = str(answer.get("text", "")).strip()
             resume_prompt_id = answer.get("prompt_id")
@@ -326,6 +320,7 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
 
         command = state["stepData"].get("user_command")
         field_key = state["stepData"].get("current_field_key")
+        rubric = state["stepData"].get("current_rubric")
 
         if command == "/cancel":
             state["error"] = "Tool cancelled by user."
@@ -335,31 +330,33 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
             state["common_tool_input"] = {}
             state["common_tool_output"] = {}
             state["pending_prompt_id"] = None
-            await adispatch_custom_event("tool_complete", {"tool_name": self.name}) # TODO : change args of dispatched event
+            await adispatch_custom_event("tool_complete", {"tool_name": self.name})
             state["nextNode"] = END
             return state
         
         if command == "/skip":
-            state["stepData"]["field_status"][field_key] = "complete"
-            state["stepData"]["field_information"][field_key] += "The user skipped aditional data collection for this field."
-            next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
+            state["stepData"]["field_status"][field_key][rubric] = "complete"
+            state["stepData"]["field_information"][field_key][rubric] += "The user skipped aditional data collection for this rubric."
+            next_field, next_rubric = self._next_unfilled_key(state["stepData"]["field_status"], field_key)
+            if next_field != field_key:
+                state["stepData"]["step"] += 1
             state["pending_prompt_id"] = None
             state["stepData"]["last_user_answer"] = None
             if next_field == None:
-                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS})
                 state["nextNode"] = "before_analyzer"
                 return state
             state["stepData"]["current_field_key"] = next_field
-            state["stepData"]["step"] = step
+            state["stepData"]["current_rubric"] = next_rubric
             state["nextNode"] = "generate_question"
-            await adispatch_custom_event("tool_progress", {"step": step, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+            await adispatch_custom_event("tool_progress", {"step": state["stepData"]["step"], "total": self.TOTAL_STEPS})
             return state
         
         # Clarification request -> generate clarification message and re-ask.
         if command == "/clarify":
             state["pending_prompt_id"] = None
             state["stepData"]["last_user_answer"] = "Can you clarify your last message ?"
-            state["stepData"]["iterations_count"][field_key] += 1
+            state["stepData"]["iterations_count"][field_key][rubric] += 1
             state["nextNode"] = "generate_question"
             return state
 
@@ -381,27 +378,76 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
         # - update iteration count
 
         current_field = state['stepData']['current_field_key']
+        current_rubric = state['stepData']['current_rubric']
         information_status = self._write_information_status(state["stepData"])
+        output_format = {
+            "type": "array",
+            "items": {
+                "oneOf": [
+                    {
+                        "type": object,
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": field,
+                                "description": "ID of the field"
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": content["rubrics"].keys(),
+                                            "description": f"ID of the rubric inside the field {field}"
+                                        },
+                                        "new_information_summary": {
+                                            "type": "string",
+                                            "description": "updated information summary of the rubric, based on the user answer and the already extracted information regarding the rubric"
+                                        },
+                                        "new_status": {
+                                            "type": "string",
+                                            "enum": ["empty", "in_progress", "complete"],
+                                            "description": "updated status of the rubric, based on the new information summary and the rubric description."
+                                        }
+                                    },
+                                    "required": ["rubric", "new_information_summary", "new_status"],
+                                    "additionalProperties": False
+                                },
+                                "description": "the updated information/status for all rubric of the field"
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    }
+                    for field, content in self.SLOTS_BY_FIELD.items()
+                ]
+            }
+        }
         main_prompt = f"""
 Your task now is to extract relevant information from the user answer in order to fill the 4 quantum readiness fields described in your system prompt.
 
-Here is a summary of the information already extracted for each field :
+Here is a summary of the information already extracted for each field and each rubric :
 
 {information_status}
 
-The field currently being discussed in the conversation is : {current_field}
+The rubric currently being discussed in the conversation is : {current_rubric} (field: {current_field}).
 
 Your last message was : {state['stepData']['messages'][-1]["content"]}
 
 The user answered : {state['stepData']['last_user_answer']}
+
+For each field f, for each rubric r of field f :
+1) If it exists, extract relevant information regarding r from the user answer based on the description of r, and update the information summary of r with it.
+2) Compare the new information summary of the rubric r with their description in your system prompt. If there is enough information, set r status to "complete". If there is not enough information and r was "empty", set r status to "in_progress".
+Output STRICT JSON with this schema:
+{output_format}
 """
-        
-        # Task 1
-        task1_prompt = "Extract relevant information for the current field from the user answer, based on the current field attributes. If there is no relevant information, just return 'no information'. Do not include markdown, code fences, or extra keys."
+
         step_messages = [
             {"role": "user", "content": self.SYSTEM_PROMPT},
             {"role": "user", "content": main_prompt},
-            {"role": "user", "content": task1_prompt}
         ]
         raw = await self._model_gateway.chat(
             messages=step_messages,
@@ -409,153 +455,57 @@ The user answered : {state['stepData']['last_user_answer']}
             temperature=0.2,
         )
         text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 1 : {text}")
-
-        # Task 2
-        task2_prompt = f"""Merge the information you found ({text}) with the already extracted information of the current field ({state['stepData']['field_information'][current_field]}) into a single text summary.
-Do not include markdown, code fences, or extra keys.
-"""
-        step_messages += [
-            {"role": "assistant", "content": text},
-            {"role": "user", "content": task2_prompt}
-        ]
-        raw = await self._model_gateway.chat(
-            messages=step_messages,
-            model=self.VALIDATOR_MODEL,
-            temperature=0.2,
-        )
-        text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 2 : {text}")
-        state["stepData"]["field_information"][current_field] = text
-
-        # Task 3
-        output3_format = {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["empty", "in_progress", "complete"]
-                }
-            }
-        }
-        task3_prompt = f"""Based on the new information summary for the current field and the answer criteria of the current field,
-indicate wether the current field is 'empty' (no user information extracted for this field), 'in_progress' (some user information but not enough) or 'complete' (there is enough user information for this field).
-Output STRICT JSON with this schema:
-{output3_format}
-"""
-        step_messages += [
-            {"role": "assistant", "content": text},
-            {"role": "user", "content": task3_prompt}
-        ]
-        raw = await self._model_gateway.chat(
-            messages=step_messages,
-            model=self.VALIDATOR_MODEL,
-            temperature=0.1,
-        )
-        text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 3 : {text}")
+        print(f"[DATA_COLLECTOR] DEBUG - Output get_information : {text}")
         try:
-            start = text.find("{")
-            end = text.rfind("}") + 1
+            start = text.find("[")
+            end = text.rfind("]") + 1
             data = json.loads(text[start:end])
-            status = data.get("status")
-            if status and (status == "complete" or (status == "in_progress" and state["stepData"]["field_status"][current_field] != "complete")):
-                state["stepData"]["field_status"][current_field] = status
-                state["stepData"]["iterations_count"][current_field] += 1
-                if state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
-                    state["stepData"]["field_status"][current_field] = "complete"
-        except Exception:
-            # Fail-safe: treat as incomplete
-            print("[DATA_COLLECTOR] DEBUG - Parsing of task 3 output has failed.")
-            state["stepData"]["iterations_count"][current_field] += 1
-            if state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
-                state["stepData"]["field_status"][current_field] = "complete"
-        
-        # Task 4
-        output4_format = {
-            "type": "object",
-            "properties": {
-                "list": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "key": {
-                                "type": "string"
-                            },
-                            "new_information_summary": {
-                                "type": "string"
-                            },
-                            "new_status": {
-                                "type": "string",
-                                "enum": ["empty", "in_progress", "complete"]
-                            }
-                        },
-                        "required": ["key", "new_information_summary", "new_status"]
-                    }
-                }
-            },
-            "required": ["list"]
-        }
-        task4_prompt = f"""Based on the fields specifications, determine if the user answer contains relevant information for some fields other than the current field.
-Update the information summary of the concerned fields with the user answer.
-Compare the new information summary of the concerned fields with their answer criteria. For each field, if there is enough information, set the field status to "complete". If there is not enough information and the field was "empty", set the field status to "in_progress"
-Return the list of the concerned fields, with their key, their new information summary and their new status.
-Output STRICT JSON with this schema:
-{output4_format}
-"""
-        step_messages += [
-            {"role": "assistant", "content": text},
-            {"role": "user", "content": task4_prompt}
-        ]
-        raw = await self._model_gateway.chat(
-            messages=step_messages,
-            model=self.VALIDATOR_MODEL,
-            temperature=0.2,
-        )
-        text = (raw or "").strip()
-        print(f"[DATA_COLLECTOR] DEBUG - Output task 4 : {text}")
-        try:
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            data = json.loads(text[start:end])
-            data_list = data.get("list")
-            for item in data_list:
-                if item.get("key") != current_field and state["stepData"]["field_status"].get(item.get("key")) != "complete":
-                    state["stepData"]["field_status"][item.get("key")] = (item.get("new_status") or state["stepData"]["field_status"][item.get("key")])
-                    state["stepData"]["field_information"][item.get("key")] = (item.get("new_information_summary") or state["stepData"]["field_information"][item.get("key")])
+            for field_item in data:
+                field_key = field_item.get("field")
+                rubrics_list = field_item.get("rubrics")
+                if field_key is None or field_key not in self.SLOTS_BY_FIELD.keys() or rubrics_list is None:
+                    print("[DATA COLLECTOR] ⚠ INFO - invalid field item in get_information AI output")
+                else:
+                    for rubric_item in rubrics_list:
+                        rubric_name = rubric_item.get("rubric")
+                        rubric_summary = rubric_item.get("new_information_summary")
+                        rubric_status = rubric_item.get("new_status")
+                        if rubric_name is None or rubric_name not in self.SLOTS_BY_FIELD[field_key]["rubrics"].keys() or rubric_summary is None or rubric_status is None:
+                            print("[DATA COLLECTOR] ⚠ INFO - invalid rubric item in get_information AI output")
+                        else:
+                            if state["stepData"]["field_status"][field_key][rubric_name] != "complete":
+                                state["stepData"]["field_status"][field_key][rubric_name] = rubric_status
+                                state["stepData"]["field_information"][field_key][rubric_name] = rubric_summary
         except Exception:
             # Fail-safe: no update on other fields
-            print("[DATA_COLLECTOR] DEBUG - Parsing of task 4 output has failed.")
+            print("[DATA_COLLECTOR] DEBUG - Parsing of get_information AI output has failed.")
+
+        state["stepData"]["iterations_count"][current_field][current_rubric] += 1
+        if state["stepData"]["iterations_count"][current_field][current_rubric] >= self.MAX_RETRIES_PER_FIELD:
+            state["stepData"]["field_status"][current_field][current_rubric] = "complete"
 
         # Determine next step
         state["pending_prompt_id"] = None
-        if state["stepData"]["field_status"][current_field] == "complete":
-            next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
+        if state["stepData"]["field_status"][current_field][current_rubric] == "complete":
+            next_field, next_rubric = self._next_unfilled_key(state["stepData"]["field_status"], current_field)
+            if next_field != current_field:
+                state["stepData"]["step"] += 1
             if next_field == None:
-                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
+                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS})
                 state["nextNode"] = "before_analyzer"
                 self._log_model_quality_debug(state=state, current_field=current_field)
                 return state
             state["stepData"]["current_field_key"] = next_field
-            state["stepData"]["step"] = step
-            await adispatch_custom_event("tool_progress", {"step": step, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
-        self._log_model_quality_debug(state=state, current_field=current_field)
+            state["stepData"]["current_rubric"] = next_rubric
+            await adispatch_custom_event("tool_progress", {"step": state["stepData"]["step"], "total": self.TOTAL_STEPS})
+        self._log_model_quality_debug(state=state, current_field=current_field, current_rubric=current_rubric)
         state["nextNode"] = "generate_question"
         return state
     
     async def before_analyzer_node(self, state: SubgraphState) -> SubgraphState:
         collected = state["stepData"].get("field_information", {})
-        branch_a_topics = {
-            "use_case_identification": collected.get("a_use_case_identification"),
-            "technical_infrastructure_baseline": collected.get("a_technical_infrastructure_baseline"),
-            "strategic_organizational_maturity": collected.get("a_strategic_organizational_maturity"),
-            "roadmap_ecosystem": collected.get("a_roadmap_ecosystem"),
-        }
         step_data = {
-            "user_industry": collected.get("a_use_case_identification"),
-            "branch_a_topics": branch_a_topics,
-            "fields": collected,
+            "branch_a_topics": collected,
         }
         await adispatch_custom_event(
             "tool_complete",
@@ -573,40 +523,47 @@ Output STRICT JSON with this schema:
             return v
         return None
     
-    def _next_unfilled_key(self, field_status: Dict[str, str]) -> Optional[str]:
-        for i in range(len(self.FIELD_SPECS)):
-            if field_status[self.FIELD_SPECS[i]["key"]] != "complete":
-                return self.FIELD_SPECS[i]["key"], i+1
+    def _next_unfilled_key(self, field_status: Dict[str, str], current_field: str) -> Optional[str]:
+        for rubric, status in field_status[current_field].items():
+            if status != "complete":
+                return current_field, rubric
+        for field, value in field_status.items():
+            for rubric, status in value.items():
+                if status != "complete":
+                    return field, rubric
         return None, None
 
     def _write_information_status(self, stepData: QuantumDataCollectorState) -> str:
-        complete_fields_str = "Complete or skipped fields (No more information needed) :"
-        ongoing_fields_str = "In progress fields (partially filled fields) :"
-        empty_fields_str = "Empty fields :"
-        for field in self.FIELD_SPECS:
-            field_status = stepData.get("field_status", {}).get(field["key"], "")
-            field_information = stepData.get("field_information", {}).get(field["key"], "")
-            if field_status == "empty":
-                empty_fields_str += f"\n    - key : {field['key']}"
-            elif field_status == "in_progress":
-                ongoing_fields_str += f"\n    - key : {field['key']} ; information : {field_information}"
-            elif field_status == "complete":
-                complete_fields_str += f"\n    - key : {field['key']} ; information : {field_information}"
-        return f"1. {complete_fields_str}\n\n2. {ongoing_fields_str}\n\n3. {empty_fields_str}"
+        complete_rubrics_str = "Complete or skipped rubrics (No more information needed) :"
+        ongoing_rubrics_str = "In progress rubrics (partially filled fields) :"
+        empty_rubrics_str = "Empty rubrics :"
+        for field, content in self.SLOTS_BY_FIELD.items():
+            for rubric in content["rubrics"].keys():
+                rubric_status = stepData["field_status"][field][rubric]
+                rubric_information = stepData["field_information"][field][rubric]
+                if rubric_status == "empty":
+                    empty_rubrics_str += f"\n    - field : {field} ; rubric : {rubric}"
+                elif rubric_status == "in_progress":
+                    ongoing_rubrics_str += f"\n    - field : {field} ; rubric : {rubric} ; information : {rubric_information}"
+                elif rubric_status == "complete":
+                    complete_rubrics_str += f"\n    - field : {field} ; rubric : {rubric} ; information : {rubric_information}"
+        output = f"1. {complete_rubrics_str}\n\n2. {ongoing_rubrics_str}\n\n3. {empty_rubrics_str}"
+        return output
 
-    def _log_model_quality_debug(self, state: SubgraphState, current_field: str) -> None:
+    def _log_model_quality_debug(self, state: SubgraphState, current_field: str, current_rubric: str) -> None:
         question = self._latest_assistant_question(state["stepData"].get("messages", []))
         user_answer = state["stepData"].get("last_user_answer", "")
-        stored_field_value = state["stepData"].get("field_information", {}).get(current_field, "")
-        stored_field_status = state["stepData"].get("field_status", {}).get(current_field, "unknown")
+        stored_field_value = state["stepData"].get("field_information", {}).get(current_field, {}).get(current_rubric, "")
+        stored_field_status = state["stepData"].get("field_status", {}).get(current_field, {}).get(current_rubric, "unknown")
         print(
             "\n[MODEL_QUALITY_DEBUG]"
             f"\n- model: {self.VALIDATOR_MODEL}"
             f"\n- current_field: {current_field}"
-            f"\n- field_status: {stored_field_status}"
+            f"\n- current rubric: {current_rubric}"
+            f"\n- rubric_status: {stored_field_status}"
             f"\n- agent_question: {question}"
             f"\n- user_response: {user_answer}"
-            f"\n- stored_field_information: {stored_field_value}"
+            f"\n- stored_rubric_information: {stored_field_value}"
             "\n[/MODEL_QUALITY_DEBUG]\n"
         )
 
@@ -616,21 +573,14 @@ Output STRICT JSON with this schema:
                 return message.get("content", "")
         return "No assistant question found."
     
-    def _field_desc_str(self) -> str:
-        res = ""
-        for field in self.FIELD_SPECS:
-            res += f"- {field['key']}: {field['explanation']}\n"
-        return res
-    
     async def _ai_completion(self, stepData: QuantumDataCollectorState) -> str:
-        field_description = self._field_desc_str()
         field_information = stepData.get("field_information", {})
         ai_question = self._latest_assistant_question(stepData["messages"])
         prompt=f"""You want to assess the quantum readiness of your company, so you asked an assistant to provide you a detailed report on the quantum readiness of your company.
-In order to generate a reliable report, this assistant needs your information regarding 4 fields : 
-{field_description}
+In order to generate a reliable report, this assistant needs your information regarding several rubrics grouped into 4 fields : 
+{json.dumps(self.SLOTS_BY_FIELD)}
 You already provided the following information :
-{field_information}
+{json.dumps(field_information)}
 
 Now, the assistant asked you the following question : {ai_question}
 Invent a response consistent with the information already given.
