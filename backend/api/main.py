@@ -17,8 +17,9 @@ load_dotenv()
 from core.graph import build_core_graph
 from core.registry import SubgraphRegistry, CommonToolRegistry
 from core.checkpointer import get_checkpointer
-from core.llm import get_model_gateway
+from core.llm import configure_model_gateway
 from core.interaction_logger import InteractionLogger
+from core.usage_tracker import UsageTracker
 
 # Common Tools (Layer 3)
 from common_tools.Interrupt_tool import InterruptTool
@@ -64,7 +65,8 @@ async def startup():
     print("="*60)
     
     # Initialize core shared services
-    model_gateway = get_model_gateway()
+    usage_tracker = UsageTracker()
+    model_gateway = configure_model_gateway(usage_tracker=usage_tracker)
     
     # Instanciate and register common tools
     commonToolRegistry = CommonToolRegistry()
@@ -94,10 +96,12 @@ async def startup():
     )
     
     app.state.interaction_logger = InteractionLogger()
+    app.state.usage_tracker = usage_tracker
     app.state.feedback_logger = FeedbackLogger()
 
     print(f"\n✓ Core graph built with {len(subgraphRegistry)} subgraph(s)")
     print("✓ Interaction logger initialized")
+    print("✓ LLM usage tracker initialized")
     print("✓ Feedback logger initialized")
     print("="*60 + "\n")
 
@@ -108,6 +112,9 @@ async def shutdown():
     interaction_logger = getattr(app.state, "interaction_logger", None)
     if interaction_logger:
         await interaction_logger.close()
+    usage_tracker = getattr(app.state, "usage_tracker", None)
+    if usage_tracker:
+        await usage_tracker.close()
 
 # Include routes
 from api.routes.chat import router as chat_router

@@ -212,6 +212,40 @@ async def stream_graph_events(
 
             if final_output:
                 print(f"[SSE_STREAM] Emitting text_done ({len(final_output)} chars)")
+                step_data = {}
+                if final_state and hasattr(final_state, "values") and final_state.values:
+                    step_data = final_state.values.get("stepData", {}) or {}
+                report_save_opt_out = bool(step_data.get("report_save_opt_out", False))
+                is_quantum_report = "QUANTUM READINESS REPORT" in final_output
+                if is_quantum_report and interaction_logger is not None:
+                    if report_save_opt_out:
+                        await _log_event(
+                            "final_report_not_saved",
+                            payload={"reason": "opt_out"},
+                        )
+                    else:
+                        try:
+                            await interaction_logger.log_final_report(
+                                session_id=session_id,
+                                user_id=user_id,
+                                report_text=final_output,
+                                company_name=step_data.get("company_name") or step_data.get("company_name_for_report"),
+                                industry=step_data.get("industry"),
+                                metadata={
+                                    "archetype": step_data.get("archetype"),
+                                    "quantum_opportunity_score": step_data.get("quantum_opportunity_score"),
+                                },
+                            )
+                            await _log_event(
+                                "final_report_saved",
+                                payload={"saved": True},
+                            )
+                        except Exception as exc:
+                            print(f"[SSE_STREAM] ⚠ Failed to persist final report: {exc}")
+                            await _log_event(
+                                "final_report_save_failed",
+                                payload={"error": str(exc)},
+                            )
                 await _log_event(
                     "stream_output_complete",
                     payload={"output_length": len(final_output)},

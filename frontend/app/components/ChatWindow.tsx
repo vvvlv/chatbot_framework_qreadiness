@@ -112,23 +112,28 @@ export function ChatWindow() {
     <div className={`flex relative h-screen flex-col bg-white`}>
       <header className="sticky top-0 bg-skyblue px-6 py-4 shadow-sm">
         <div className="flex flex-col xs:flex-row-reverse flex-1 xs:justify-between xs:items-center gap-2">
-          <div className="flex-1 xs:flex-none flex flex-row justify-between">
-            <button
-              type="button"
-              onClick={() => setShowHelpPopup(true)}
-              className="inline-flex xs:hidden items-center justify-center rounded-full aspect-square h-6 py-2 xs:h-0 xs:py-0 text-sm font-title font-bold bg-navy text-white hover:bg-navy/80 hover:cursor-pointer"
-            >
-              ?
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowFeedbackPopup(true);
-              }}
-              className="h-max rounded-xl bg-navy px-4 md:px-6 py-2 font-paragraph lg:text-md md:text-sm text-xs text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
-            >
-              Feedback
-            </button>
+          <div className="flex-1 xs:flex-none flex flex-col items-end gap-1">
+            <span className="font-paragraph text-[10px] text-slate-500 text-right max-w-[220px] truncate">
+              Session {sessionId}
+            </span>
+            <div className="flex flex-row items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowHelpPopup(true)}
+                className="inline-flex xs:hidden items-center justify-center rounded-full aspect-square h-6 py-2 xs:h-0 xs:py-0 text-sm font-title font-bold bg-navy text-white hover:bg-navy/80 hover:cursor-pointer"
+              >
+                ?
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFeedbackPopup(true);
+                }}
+                className="h-max rounded-xl bg-navy px-4 md:px-6 py-2 font-paragraph lg:text-md md:text-sm text-xs text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                Feedback
+              </button>
+            </div>
           </div>
           <div className="flex flex-col">
             <div className="flex gap-6 items-center">
@@ -294,6 +299,7 @@ export function ChatWindow() {
           <HelpPopup close={() => setShowHelpPopup(false)}/>
         </>
       )}
+
     </div>
   );
 }

@@ -33,7 +33,8 @@ from core.state import SubgraphState
 class FieldSpec(TypedDict):
     key: str
     explanation: str
-    default_question: str
+    section_intro: str
+    atomic_questions: List[str]
     answer_criteria: str
     example_answers: List[str]
 
@@ -49,8 +50,18 @@ class QuantumDataCollectorState(TypedDict, total=False):
     user_command: Optional[str] # potential inputed command between /cancel, /skip and /clarify
     current_field_key: Optional[str]
     pending_question: Optional[str]
+    pending_clarification_question: Optional[str]
     consumed_prompt_ids: List[str]
     last_validation_reason: Optional[str]
+    current_question_index: Dict[str, int]
+    section_intro_sent: Dict[str, bool]
+    clarification_count_by_question: Dict[str, int]
+    manual_clarify_count_by_question: Dict[str, int]
+    awaiting_clarification: bool
+    last_question_kind: Optional[str]
+    post_collection_stage: int
+    company_name_for_report: Optional[str]
+    report_save_opt_out: bool
     step: int
 
 class QuantumDataCollectorTool(SubgraphProtocol):
@@ -73,14 +84,23 @@ class QuantumDataCollectorTool(SubgraphProtocol):
         {
             "key": "a_use_case_identification",
             "explanation": "Branch A topic: use case identification (industry, computationally intensive problems, optimization, intrinsic quantum use cases, classical bottlenecks).",
-            "default_question": "Quantum Competitiveness - Use Case Identification: Tell us your industry and the most computationally intensive problems where quantum could matter, including optimization or intrinsic quantum research, and any current classical bottlenecks.",
+            "section_intro": "Let us start by identifying your use case so we can anchor the assessment in your business reality.",
+            "atomic_questions": [
+                "What industry are you in, and what are your most computationally intensive business problems?",
+                "Do you run large-scale combinatorial optimization problems (logistics routing, scheduling, portfolio construction, resource allocation)?",
+                "Do you conduct molecular simulation, materials science, drug discovery research, or any other research that has an intrinsic quantum nature?",
+            ],
             "answer_criteria": "Provide industry context plus at least one concrete high-compute or quantum-relevant use case.",
             "example_answers": ["Healthcare: drug discovery simulation and route optimization with long runtimes.", "Finance: portfolio optimization bottlenecks in intraday decisions."],
         },
         {
             "key": "a_technical_infrastructure_baseline",
             "explanation": "Branch A topic: technical and infrastructure baseline (HPC/cloud footprint, classical baselines, vendor relationships, internal expertise).",
-            "default_question": "Quantum Competitiveness - Technical & Infrastructure Baseline: Summarize your compute footprint, classical solution maturity, any quantum vendor relationships, and whether you have internal quantum expertise.",
+            "section_intro": "Now I would like to understand your current technical baseline and delivery capacity.",
+            "atomic_questions": [
+                "Do you currently implement state-of-the-art classical solutions for the problems you are trying to solve?",
+                "Do you have internal quantum expertise, or would any engagement depend entirely on external partners?",
+            ],
             "answer_criteria": "Describe current technical baseline and capability level across infrastructure, tooling, and expertise.",
             "example_answers": [
                 "Hybrid HPC + cloud, mature classical optimizers, early vendor pilots, small internal team.",
@@ -90,7 +110,11 @@ class QuantumDataCollectorTool(SubgraphProtocol):
         {
             "key": "a_strategic_organizational_maturity",
             "explanation": "Branch A topic: strategic and organizational maturity (adoption posture, IP sensitivity, dedicated budget).",
-            "default_question": "Quantum Competitiveness - Strategic & Organizational Maturity: Describe your technology adoption posture, IP sensitivity, and whether budget for quantum exploration is dedicated or competing with other initiatives.",
+            "section_intro": "Next, let us look at organizational strategy and how innovation decisions are made internally.",
+            "atomic_questions": [
+                "What is your organization's typical technology adoption posture (first mover, second mover, wait-and-see)?",
+                "Is your product or service protected by IP regulations?",
+            ],
             "answer_criteria": "Provide posture, governance/budget context, and strategic readiness indicators.",
             "example_answers": [
                 "Second-mover posture, strong IP portfolio, dedicated exploration budget.",
@@ -100,7 +124,11 @@ class QuantumDataCollectorTool(SubgraphProtocol):
         {
             "key": "a_roadmap_ecosystem",
             "explanation": "Branch A topic: roadmap and ecosystem (internal pilots, ecosystem participation, competitor monitoring).",
-            "default_question": "Quantum Competitiveness - Roadmap & Ecosystem: Describe any internal quantum assessments/pilots, ecosystem or academic partnerships, and how you track competitor activity.",
+            "section_intro": "Finally, I want to understand your roadmap signal and external ecosystem positioning.",
+            "atomic_questions": [
+                "Have you conducted any internal assessments or pilots related to quantum computing use cases?",
+                "Are you participating in any quantum ecosystem networks, consortia, or academic partnerships?",
+            ],
             "answer_criteria": "Include execution roadmap signals and ecosystem engagement level.",
             "example_answers": [
                 "Active pilots, consortium membership, and quarterly competitor intelligence.",
@@ -115,7 +143,8 @@ Your first step is to gather the information necessary for this assessment.
 More precisely, your goal is to identify the user's information according to 4 fields, described by the following attributes :
 - "key" : a string to identify the field
 - "explanation": an explanation of the field
-- "default question": an exemple question to ask to get more information about the field
+- "section_intro": a short conversational intro used before asking questions in the field
+- "atomic_questions": an ordered list of focused questions asked one-by-one
 - "answer_criteria": what information is needed to consider the field as complete
 - "example_answers": a list of example user answers that fill the information needed for the field
 
@@ -128,6 +157,14 @@ Your main objective is always to get more information from the user about the cu
 """
     TOTAL_STEPS = 4
     MAX_RETRIES_PER_FIELD = 5
+    FINAL_COMPANY_NAME_QUESTION = (
+        "Before I generate your report, would you like to provide a company name to display in it? "
+        "If yes, type the exact name. If not, type 'skip'."
+    )
+    FINAL_REPORT_SAVE_OPT_OUT_QUESTION = (
+        "Final privacy preference: do you want to opt out of saving this final report in our database? "
+        "Please answer yes (opt out) or no (allow saving)."
+    )
 
     # --- Main functions ---
 
@@ -200,8 +237,18 @@ Your main objective is always to get more information from the user about the cu
             "consumed_prompt_ids": [],
             "last_validation_reason": None,
             "pending_question": None,
+            "pending_clarification_question": None,
             "user_command": None,
             "current_field_key": "a_use_case_identification",
+            "current_question_index": {field["key"]: 0 for field in self.FIELD_SPECS},
+            "section_intro_sent": {field["key"]: False for field in self.FIELD_SPECS},
+            "clarification_count_by_question": {},
+            "manual_clarify_count_by_question": {},
+            "awaiting_clarification": False,
+            "last_question_kind": None,
+            "post_collection_stage": 0,
+            "company_name_for_report": None,
+            "report_save_opt_out": False,
             "step": 1,
         }
 
@@ -231,46 +278,28 @@ Your main objective is always to get more information from the user about the cu
         if state["stepData"].get("pending_question") != None:
             question = state["stepData"]["pending_question"]
         else:
-            information_status = self._write_information_status(state["stepData"])
-            extra_rules = ""
-            if state["stepData"]["iterations_count"][state['stepData']['current_field_key']] == 4:
-                extra_rules = """It is your last question to get information about the current field.
-If the user strays too far from the topic, warn them that you're going to switch to a next field at next question.
-"""
-            if state["stepData"].get("last_user_answer", None) == None:
-                system_message = f"""
-INFORMATION STATUS :
+            field_key = state["stepData"].get("current_field_key")
+            field_spec = self._field_spec_by_key(field_key)
+            question_index = state["stepData"]["current_question_index"].get(field_key, 0)
+            question_index = max(0, min(question_index, len(field_spec["atomic_questions"]) - 1))
+            state["stepData"]["current_question_index"][field_key] = question_index
 
-{information_status}
-
-CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
-
-INSTRUCTION : generate a question to get more information from the user about the current field.
-"""
+            # Clarification question (max 1) takes priority over main atomic question.
+            if state["stepData"].get("awaiting_clarification"):
+                question = (
+                    state["stepData"].get("pending_clarification_question")
+                    or self._fallback_clarification_question(field_spec["atomic_questions"][question_index])
+                )
+                state["stepData"]["last_question_kind"] = "clarification"
             else:
-                system_message = f"""
-INFORMATION STATUS :
+                base_question = field_spec["atomic_questions"][question_index].strip()
+                section_intro = ""
+                if not state["stepData"]["section_intro_sent"].get(field_key, False):
+                    section_intro = field_spec["section_intro"].strip()
+                    state["stepData"]["section_intro_sent"][field_key] = True
+                question = f"{section_intro}\n\n{base_question}" if section_intro else base_question
+                state["stepData"]["last_question_kind"] = "main"
 
-{information_status}
-
-CURRENT FIELD KEY : {state['stepData'].get('current_field_key', 'No current field key')}
-
-INSTRUCTION : Generate a message based on your system prompt, the last user message and the message history.
-{extra_rules}
-"""
-            new_message = {
-                "role": "user",
-                "content": f"""<instructions>{system_message}</instructions>
-
-<user_message>{state['stepData'].get('last_user_answer', 'no user message')}</user_message>"""
-            }
-            state["stepData"]["messages"].append(new_message)
-            llm_message : list[Dict] = [{"role": "system", "content": self.SYSTEM_PROMPT}] + state["stepData"]["messages"][-5:]
-            question = await self._model_gateway.chat(
-                messages=llm_message,
-                model=self.VALIDATOR_MODEL,
-                temperature=0.4,
-            )
             question = (question or "").strip()
             state["stepData"]["messages"].append({"role": "assistant", "content": question})
             state["stepData"]["pending_question"] = question
@@ -340,14 +369,26 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
             return state
         
         if command == "/skip":
+            if state["stepData"].get("post_collection_stage", 0) > 0:
+                self._apply_post_collection_skip(state["stepData"])
+                state["pending_prompt_id"] = None
+                if state["stepData"].get("post_collection_stage", 0) >= 3:
+                    state["nextNode"] = "before_analyzer"
+                else:
+                    state["nextNode"] = "generate_question"
+                return state
             state["stepData"]["field_status"][field_key] = "complete"
             state["stepData"]["field_information"][field_key] += "The user skipped aditional data collection for this field."
+            field_spec = self._field_spec_by_key(field_key)
+            state["stepData"]["current_question_index"][field_key] = len(field_spec["atomic_questions"])
+            state["stepData"]["awaiting_clarification"] = False
+            state["stepData"]["pending_clarification_question"] = None
             next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
             state["pending_prompt_id"] = None
             state["stepData"]["last_user_answer"] = None
             if next_field == None:
-                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
-                state["nextNode"] = "before_analyzer"
+                self._start_post_collection(state["stepData"])
+                state["nextNode"] = "generate_question"
                 return state
             state["stepData"]["current_field_key"] = next_field
             state["stepData"]["step"] = step
@@ -358,8 +399,23 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
         # Clarification request -> generate clarification message and re-ask.
         if command == "/clarify":
             state["pending_prompt_id"] = None
-            state["stepData"]["last_user_answer"] = "Can you clarify your last message ?"
-            state["stepData"]["iterations_count"][field_key] += 1
+            if state["stepData"].get("post_collection_stage", 0) > 0:
+                current_question = self._latest_assistant_question(state["stepData"].get("messages", []))
+                state["stepData"]["pending_question"] = await self._auto_clarify_question_for_user(current_question)
+                state["stepData"]["last_question_kind"] = "main"
+                state["nextNode"] = "generate_question"
+                return state
+
+            current_question = self._get_current_atomic_question(state["stepData"], field_key)
+            question_instance_key = self._question_instance_key(state["stepData"], field_key)
+            clarify_count = state["stepData"]["manual_clarify_count_by_question"].get(question_instance_key, 0)
+            preset_clarification = self._preset_clarification_for_question(current_question)
+            if clarify_count == 0 and preset_clarification:
+                state["stepData"]["pending_question"] = preset_clarification
+            else:
+                state["stepData"]["pending_question"] = await self._auto_clarify_question_for_user(current_question)
+            state["stepData"]["manual_clarify_count_by_question"][question_instance_key] = clarify_count + 1
+            state["stepData"]["last_question_kind"] = "main"
             state["nextNode"] = "generate_question"
             return state
 
@@ -379,8 +435,18 @@ INSTRUCTION : Generate a message based on your system prompt, the last user mess
         # - update other fields information/status if relevant
         # - update current field if it has been completed
         # - update iteration count
+        if state["stepData"].get("post_collection_stage", 0) > 0:
+            self._handle_post_collection_response(state["stepData"])
+            state["pending_prompt_id"] = None
+            if state["stepData"].get("post_collection_stage", 0) >= 3:
+                state["nextNode"] = "before_analyzer"
+            else:
+                state["nextNode"] = "generate_question"
+            return state
 
         current_field = state['stepData']['current_field_key']
+        current_atomic_question = self._get_current_atomic_question(state["stepData"], current_field)
+        last_question_kind = state["stepData"].get("last_question_kind", "main")
         information_status = self._write_information_status(state["stepData"])
         main_prompt = f"""
 Your task now is to extract relevant information from the user answer in order to fill the 4 quantum readiness fields described in your system prompt.
@@ -391,13 +457,21 @@ Here is a summary of the information already extracted for each field :
 
 The field currently being discussed in the conversation is : {current_field}
 
+The concrete question asked to the user was : {current_atomic_question}
+
+The question type was : {last_question_kind}
+
 Your last message was : {state['stepData']['messages'][-1]["content"]}
 
 The user answered : {state['stepData']['last_user_answer']}
 """
         
         # Task 1
-        task1_prompt = "Extract relevant information for the current field from the user answer, based on the current field attributes. If there is no relevant information, just return 'no information'. Do not include markdown, code fences, or extra keys."
+        task1_prompt = f"""Extract relevant information for the current field from the user answer, based on the current field attributes and this specific question: {current_atomic_question}
+Treat short direct answers like "yes", "no", or "not yet" as relevant information when they clearly answer the question.
+If there is no relevant information, just return 'no information'.
+Do not include markdown, code fences, or extra keys.
+"""
         step_messages = [
             {"role": "user", "content": self.SYSTEM_PROMPT},
             {"role": "user", "content": main_prompt},
@@ -409,10 +483,18 @@ The user answered : {state['stepData']['last_user_answer']}
             temperature=0.2,
         )
         text = (raw or "").strip()
+        if self._is_no_information(text):
+            short_answer_info = self._short_answer_information(
+                current_atomic_question,
+                state["stepData"].get("last_user_answer"),
+            )
+            if short_answer_info:
+                text = short_answer_info
         print(f"[DATA_COLLECTOR] DEBUG - Output task 1 : {text}")
 
         # Task 2
         task2_prompt = f"""Merge the information you found ({text}) with the already extracted information of the current field ({state['stepData']['field_information'][current_field]}) into a single text summary.
+Return a concise non-redundant summary (maximum 90 words).
 Do not include markdown, code fences, or extra keys.
 """
         step_messages += [
@@ -425,6 +507,7 @@ Do not include markdown, code fences, or extra keys.
             temperature=0.2,
         )
         text = (raw or "").strip()
+        text = self._compact_information_summary(text)
         print(f"[DATA_COLLECTOR] DEBUG - Output task 2 : {text}")
         state["stepData"]["field_information"][current_field] = text
 
@@ -459,17 +542,11 @@ Output STRICT JSON with this schema:
             end = text.rfind("}") + 1
             data = json.loads(text[start:end])
             status = data.get("status")
-            if status and (status == "complete" or (status == "in_progress" and state["stepData"]["field_status"][current_field] != "complete")):
+            if status in {"empty", "in_progress"} and state["stepData"]["field_status"][current_field] != "complete":
                 state["stepData"]["field_status"][current_field] = status
-                state["stepData"]["iterations_count"][current_field] += 1
-                if state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
-                    state["stepData"]["field_status"][current_field] = "complete"
         except Exception:
             # Fail-safe: treat as incomplete
             print("[DATA_COLLECTOR] DEBUG - Parsing of task 3 output has failed.")
-            state["stepData"]["iterations_count"][current_field] += 1
-            if state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
-                state["stepData"]["field_status"][current_field] = "complete"
         
         # Task 4
         output4_format = {
@@ -523,18 +600,55 @@ Output STRICT JSON with this schema:
             for item in data_list:
                 if item.get("key") != current_field and state["stepData"]["field_status"].get(item.get("key")) != "complete":
                     state["stepData"]["field_status"][item.get("key")] = (item.get("new_status") or state["stepData"]["field_status"][item.get("key")])
-                    state["stepData"]["field_information"][item.get("key")] = (item.get("new_information_summary") or state["stepData"]["field_information"][item.get("key")])
+                    compact_summary = self._compact_information_summary(
+                        item.get("new_information_summary") or state["stepData"]["field_information"][item.get("key")]
+                    )
+                    state["stepData"]["field_information"][item.get("key")] = compact_summary
         except Exception:
             # Fail-safe: no update on other fields
             print("[DATA_COLLECTOR] DEBUG - Parsing of task 4 output has failed.")
 
+        # Task 5: Clarification decision (max one per atomic question).
+        should_clarify = False
+        clarification_question = None
+        question_instance_key = self._question_instance_key(state["stepData"], current_field)
+        clarification_count = state["stepData"]["clarification_count_by_question"].get(question_instance_key, 0)
+        if last_question_kind == "main" and clarification_count < 1:
+            should_clarify, clarification_question = await self._clarification_decision(
+                current_question=current_atomic_question,
+                user_answer=state["stepData"]["last_user_answer"],
+                extracted_information=state["stepData"]["field_information"][current_field],
+            )
+
+        if should_clarify:
+            state["stepData"]["awaiting_clarification"] = True
+            state["stepData"]["pending_clarification_question"] = clarification_question
+            state["stepData"]["clarification_count_by_question"][question_instance_key] = clarification_count + 1
+            state["pending_prompt_id"] = None
+            state["nextNode"] = "generate_question"
+            self._log_model_quality_debug(state=state, current_field=current_field)
+            return state
+
         # Determine next step
+        state["stepData"]["awaiting_clarification"] = False
+        state["stepData"]["pending_clarification_question"] = None
+        state["stepData"]["iterations_count"][current_field] += 1
+        self._advance_current_question(state["stepData"], current_field)
+        current_index = state["stepData"]["current_question_index"].get(current_field, 0)
+        field_spec = self._field_spec_by_key(current_field)
+        if current_index > 0 and state["stepData"]["field_status"][current_field] == "empty":
+            state["stepData"]["field_status"][current_field] = "in_progress"
+
         state["pending_prompt_id"] = None
-        if state["stepData"]["field_status"][current_field] == "complete":
+        if (
+            current_index >= len(field_spec["atomic_questions"])
+            or state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD
+        ):
+            state["stepData"]["field_status"][current_field] = "complete"
             next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
             if next_field == None:
-                await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS}) # TODO : change args of dispatched event
-                state["nextNode"] = "before_analyzer"
+                self._start_post_collection(state["stepData"])
+                state["nextNode"] = "generate_question"
                 self._log_model_quality_debug(state=state, current_field=current_field)
                 return state
             state["stepData"]["current_field_key"] = next_field
@@ -556,6 +670,8 @@ Output STRICT JSON with this schema:
             "user_industry": collected.get("a_use_case_identification"),
             "branch_a_topics": branch_a_topics,
             "fields": collected,
+            "company_name_for_report": state["stepData"].get("company_name_for_report"),
+            "report_save_opt_out": bool(state["stepData"].get("report_save_opt_out", False)),
         }
         await adispatch_custom_event(
             "tool_complete",
@@ -566,6 +682,206 @@ Output STRICT JSON with this schema:
         return state
 
     # --- Utils functions ---
+
+    def _field_spec_by_key(self, field_key: Optional[str]) -> FieldSpec:
+        for field in self.FIELD_SPECS:
+            if field["key"] == field_key:
+                return field
+        return self.FIELD_SPECS[0]
+
+    def _get_current_atomic_question(self, stepData: QuantumDataCollectorState, field_key: Optional[str]) -> str:
+        field_spec = self._field_spec_by_key(field_key)
+        questions = field_spec["atomic_questions"]
+        question_index = stepData.get("current_question_index", {}).get(field_spec["key"], 0)
+        question_index = max(0, min(question_index, len(questions) - 1))
+        return questions[question_index]
+
+    def _question_instance_key(self, stepData: QuantumDataCollectorState, field_key: Optional[str]) -> str:
+        resolved_field_key = field_key or ""
+        question_index = stepData.get("current_question_index", {}).get(resolved_field_key, 0)
+        return f"{resolved_field_key}:{question_index}"
+
+    def _advance_current_question(self, stepData: QuantumDataCollectorState, field_key: Optional[str]) -> None:
+        resolved_field_key = field_key or ""
+        field_spec = self._field_spec_by_key(resolved_field_key)
+        current_idx = stepData.get("current_question_index", {}).get(resolved_field_key, 0)
+        max_idx = len(field_spec["atomic_questions"])
+        stepData["current_question_index"][resolved_field_key] = min(current_idx + 1, max_idx)
+
+    def _fallback_clarification_question(self, current_question: str) -> str:
+        return (
+            "Thanks, that helps. Could you add one concrete detail so I can capture this accurately?\n\n"
+            f"{current_question}"
+        )
+
+    def _start_post_collection(self, step_data: QuantumDataCollectorState) -> None:
+        if step_data.get("post_collection_stage", 0) > 0:
+            return
+        step_data["post_collection_stage"] = 1
+        step_data["pending_question"] = self.FINAL_COMPANY_NAME_QUESTION
+        step_data["last_question_kind"] = "main"
+        step_data["current_field_key"] = None
+
+    def _apply_post_collection_skip(self, step_data: QuantumDataCollectorState) -> None:
+        stage = int(step_data.get("post_collection_stage", 0) or 0)
+        if stage == 1:
+            step_data["company_name_for_report"] = None
+            step_data["post_collection_stage"] = 2
+            step_data["pending_question"] = self.FINAL_REPORT_SAVE_OPT_OUT_QUESTION
+            return
+        if stage == 2:
+            step_data["report_save_opt_out"] = False
+            step_data["post_collection_stage"] = 3
+            step_data["pending_question"] = None
+
+    def _handle_post_collection_response(self, step_data: QuantumDataCollectorState) -> None:
+        stage = int(step_data.get("post_collection_stage", 0) or 0)
+        answer = str(step_data.get("last_user_answer", "") or "").strip()
+        normalized = " ".join(answer.lower().split())
+        if stage == 1:
+            step_data["company_name_for_report"] = self._extract_company_name(answer, normalized)
+            step_data["post_collection_stage"] = 2
+            step_data["pending_question"] = self.FINAL_REPORT_SAVE_OPT_OUT_QUESTION
+            return
+        if stage == 2:
+            step_data["report_save_opt_out"] = self._is_affirmative_opt_out(normalized)
+            step_data["post_collection_stage"] = 3
+            step_data["pending_question"] = None
+
+    def _extract_company_name(self, raw_answer: str, normalized_answer: str) -> Optional[str]:
+        if not raw_answer:
+            return None
+        skip_values = {"skip", "no", "none", "n/a", "prefer not to say", "no thanks", "not now"}
+        if normalized_answer in skip_values:
+            return None
+        if normalized_answer in {"yes", "sure", "ok", "okay"}:
+            return None
+        cleaned = " ".join(raw_answer.strip().split()).strip("\"'")
+        if len(cleaned) < 2:
+            return None
+        return cleaned[:120]
+
+    def _is_affirmative_opt_out(self, normalized_answer: str) -> bool:
+        positive = {"yes", "y", "opt out", "please opt out", "do not save", "don't save", "no save"}
+        negative = {"no", "n", "save", "allow saving", "you can save", "do save"}
+        if normalized_answer in positive:
+            return True
+        if normalized_answer in negative:
+            return False
+        return False
+
+    def _preset_clarification_for_question(self, current_question: str) -> Optional[str]:
+        q = (current_question or "").strip()
+        question_map = {
+            "What industry are you in, and what are your most computationally intensive business problems?":
+                "To make this concrete, what industry are you in, and which one or two tasks consume the most computing time or cost today?",
+            "Do you run large-scale combinatorial optimization problems (logistics routing, scheduling, portfolio construction, resource allocation)?":
+                "In simple terms, do you solve complex decision problems where you must find the best option among many combinations, such as routing, scheduling, or portfolio construction?",
+            "Do you conduct molecular simulation, materials science, drug discovery research, or any other research that has an intrinsic quantum nature?":
+                "Do you do science-heavy R&D like molecular simulation, materials science, or drug discovery where quantum behavior is directly part of the problem?",
+            "Do you currently implement state-of-the-art classical solutions for the problems you are trying to solve?":
+                "By this I mean: are you already using the strongest non-quantum methods available today for these problems, such as advanced solvers, optimized ML models, or HPC workflows?",
+            "Do you have internal quantum expertise, or would any engagement depend entirely on external partners?":
+                "Do you currently have in-house people with quantum skills, or would you need outside consultants and vendors to do most of the work?",
+            "What is your organization's typical technology adoption posture (first mover, second mover, wait-and-see)?":
+                "How does your organization usually adopt new technology: early adopter, fast follower, or only after solutions are proven?",
+            "Is your product or service protected by IP regulations?":
+                "Are your products or services protected by patents, trade secrets, or strict IP/legal constraints?",
+            "Have you conducted any internal assessments or pilots related to quantum computing use cases?":
+                "Have you run any internal studies, experiments, or pilot projects to test possible quantum use cases?",
+            "Are you participating in any quantum ecosystem networks, consortia, or academic partnerships?":
+                "Are you connected to the quantum ecosystem through consortia, vendor programs, universities, or research partnerships?",
+        }
+        return question_map.get(q)
+
+    async def _auto_clarify_question_for_user(self, current_question: str) -> str:
+        q = (current_question or "").strip()
+        prompt = f"""Rephrase the following question to make it easier to understand.
+Original question: {q}
+
+Rules:
+- Keep the same intent.
+- Make it concrete and user-friendly.
+- Use plain language.
+- Keep it to one sentence.
+- No markdown, no bullet points, no extra text.
+"""
+        raw = await self._model_gateway.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.VALIDATOR_MODEL,
+            temperature=0.2,
+        )
+        clarified = " ".join((raw or "").strip().split())
+        if not clarified or clarified.lower().startswith("llm is not configured") or clarified.lower().startswith("llm call failed"):
+            return (
+                "Sure, let me simplify that.\n\n"
+                f"{q}\n"
+                "Please answer with one concrete example from your organization."
+            )
+        if clarified == q:
+            return (
+                "Thanks for asking. In practical terms, please answer this with one specific example from your organization:\n\n"
+                f"{q}"
+            )
+        if "**" in clarified:
+            clarified = clarified.replace("**", "")
+        if clarified.count("?") > 1:
+            first_question = clarified.split("?", 1)[0].strip()
+            clarified = f"{first_question}?"
+        return clarified
+
+    async def _clarification_decision(
+        self,
+        current_question: str,
+        user_answer: Optional[str],
+        extracted_information: Optional[str],
+    ) -> tuple[bool, Optional[str]]:
+        output_format = {
+            "type": "object",
+            "properties": {
+                "needs_clarification": {"type": "boolean"},
+                "clarification_question": {"type": "string"},
+            },
+            "required": ["needs_clarification", "clarification_question"],
+        }
+        prompt = f"""You are evaluating if a single follow-up clarification question is needed.
+Current question: {current_question}
+User answer: {user_answer or "no answer"}
+Extracted information: {extracted_information or "no information"}
+
+Rules:
+- Ask for clarification only if the answer is too vague, contradictory, or missing key detail.
+- At most one follow-up question should be asked.
+- The clarification question must be concise and concrete.
+- Return plain text in the clarification question with no markdown.
+
+Output STRICT JSON with this schema:
+{output_format}
+"""
+        raw = await self._model_gateway.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.VALIDATOR_MODEL,
+            temperature=0.1,
+        )
+        text = (raw or "").strip()
+        try:
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            data = json.loads(text[start:end])
+            needs_clarification = bool(data.get("needs_clarification"))
+            clarification_question = str(data.get("clarification_question") or "").strip()
+            if not needs_clarification:
+                return False, None
+            if not clarification_question:
+                return True, self._fallback_clarification_question(current_question)
+            if "**" in clarification_question:
+                clarification_question = clarification_question.replace("**", "")
+            if clarification_question.count("?") > 1:
+                first_question = clarification_question.split("?", 1)[0].strip()
+                clarification_question = f"{first_question}?"
+            return True, clarification_question
+        except Exception:
+            return False, None
 
     def _normalized_command(self, text: str) -> Optional[str]:
         v = (text or "").strip().lower()
@@ -589,10 +905,109 @@ Output STRICT JSON with this schema:
             if field_status == "empty":
                 empty_fields_str += f"\n    - key : {field['key']}"
             elif field_status == "in_progress":
-                ongoing_fields_str += f"\n    - key : {field['key']} ; information : {field_information}"
+                ongoing_fields_str += (
+                    f"\n    - key : {field['key']} ; information : "
+                    f"{self._compact_information_summary(field_information, max_words=45)}"
+                )
             elif field_status == "complete":
-                complete_fields_str += f"\n    - key : {field['key']} ; information : {field_information}"
+                complete_fields_str += (
+                    f"\n    - key : {field['key']} ; information : "
+                    f"{self._compact_information_summary(field_information, max_words=45)}"
+                )
         return f"1. {complete_fields_str}\n\n2. {ongoing_fields_str}\n\n3. {empty_fields_str}"
+
+    def _is_no_information(self, text: str) -> bool:
+        normalized = " ".join((text or "").strip().lower().split())
+        return normalized in {"no information", "none", "n/a"}
+
+    def _classify_binary_short_answer(self, answer: Optional[str]) -> Optional[str]:
+        normalized = " ".join((answer or "").strip().lower().split())
+        if not normalized or len(normalized.split()) > 4:
+            return None
+        negative_values = {
+            "no", "nope", "nah", "not yet", "not now", "none", "n/a", "not currently",
+        }
+        positive_values = {
+            "yes", "yeah", "yep", "affirmative", "we do", "yes we do",
+        }
+        if normalized in negative_values:
+            return "negative"
+        if normalized in positive_values:
+            return "positive"
+        return None
+
+    def _short_answer_information(self, question: str, answer: Optional[str]) -> Optional[str]:
+        polarity = self._classify_binary_short_answer(answer)
+        if not polarity:
+            return None
+
+        q = (question or "").strip()
+        mappings = {
+            "Do you run large-scale combinatorial optimization problems (logistics routing, scheduling, portfolio construction, resource allocation)?": {
+                "negative": "The user does not run large-scale combinatorial optimization problems.",
+                "positive": "The user runs large-scale combinatorial optimization problems.",
+            },
+            "Do you conduct molecular simulation, materials science, drug discovery research, or any other research that has an intrinsic quantum nature?": {
+                "negative": "The user does not conduct intrinsically quantum-natured research such as molecular simulation, materials science, or drug discovery.",
+                "positive": "The user conducts intrinsically quantum-natured research such as molecular simulation, materials science, or drug discovery.",
+            },
+            "Do you currently implement state-of-the-art classical solutions for the problems you are trying to solve?": {
+                "negative": "The user is not currently using state-of-the-art classical solutions for the target problems.",
+                "positive": "The user is currently using state-of-the-art classical solutions for the target problems.",
+            },
+            "Do you have internal quantum expertise, or would any engagement depend entirely on external partners?": {
+                "negative": "The user does not have internal quantum expertise and would rely on external partners.",
+                "positive": "The user has internal quantum expertise.",
+            },
+            "Is your product or service protected by IP regulations?": {
+                "negative": "The user reports low IP protection pressure for the product or service.",
+                "positive": "The user indicates the product or service is protected by IP regulations.",
+            },
+            "Have you conducted any internal assessments or pilots related to quantum computing use cases?": {
+                "negative": "The user has not conducted internal quantum assessments or pilots yet.",
+                "positive": "The user has conducted internal quantum assessments or pilots.",
+            },
+            "Are you participating in any quantum ecosystem networks, consortia, or academic partnerships?": {
+                "negative": "The user is not currently participating in quantum ecosystem networks, consortia, or academic partnerships.",
+                "positive": "The user is participating in quantum ecosystem networks, consortia, or academic partnerships.",
+            },
+        }
+        if q in mappings:
+            return mappings[q].get(polarity)
+        if polarity == "negative":
+            return f"The user answered negatively to the question: {q}"
+        return f"The user answered positively to the question: {q}"
+
+    def _compact_information_summary(self, text: Optional[str], max_words: int = 90) -> str:
+        cleaned = " ".join((text or "").strip().split())
+        if not cleaned:
+            return ""
+        if self._is_no_information(cleaned):
+            return cleaned
+
+        sentence_candidates = cleaned.replace("\n", " ").split(". ")
+        deduped_sentences: List[str] = []
+        seen = set()
+        for sentence in sentence_candidates:
+            normalized_sentence = sentence.strip().strip(".")
+            if not normalized_sentence:
+                continue
+            key = normalized_sentence.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped_sentences.append(normalized_sentence)
+
+        compact = ". ".join(deduped_sentences).strip()
+        if compact and not compact.endswith("."):
+            compact += "."
+
+        words = compact.split()
+        if len(words) > max_words:
+            compact = " ".join(words[:max_words]).rstrip(",;:")
+            if not compact.endswith("."):
+                compact += "."
+        return compact
 
     def _log_model_quality_debug(self, state: SubgraphState, current_field: str) -> None:
         question = self._latest_assistant_question(state["stepData"].get("messages", []))
@@ -634,13 +1049,26 @@ You already provided the following information :
 
 Now, the assistant asked you the following question : {ai_question}
 Invent a response consistent with the information already given.
-Do not include markdown, code fences, or extra keys.
+Respond with exactly one short sentence (maximum 25 words).
+Do not include markdown, code fences, lists, or extra keys.
 """
         raw = await self._model_gateway.chat(
             messages=[{"role": "user", "content": prompt}],
             model=self.VALIDATOR_MODEL,
             temperature=0.2,
         )
-        text = (raw or "").strip()
+        text = " ".join((raw or "").strip().split())
+        short_text = text
+        for separator in [".", "?", "!", ";"]:
+            idx = short_text.find(separator)
+            if idx != -1:
+                short_text = short_text[: idx + 1]
+                break
+        words = short_text.split()
+        if len(words) > 25:
+            short_text = " ".join(words[:25]).rstrip(",")
+            if not short_text.endswith("."):
+                short_text += "."
+        text = short_text.strip().strip('"')
         print(f"[DATA_COLLECTOR] DEBUG - AI completion : {text}")
         return text

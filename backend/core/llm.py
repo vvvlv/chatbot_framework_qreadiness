@@ -7,16 +7,27 @@ import os
 from typing import Any, Dict, List, Optional
 
 from core.model_gateway import ModelGateway
+from core.usage_tracker import UsageTracker
 
 _model_gateway: Optional[ModelGateway] = None
+
+
+def configure_model_gateway(usage_tracker: Optional[UsageTracker] = None) -> ModelGateway:
+    """Create or replace the global ModelGateway (optionally with usage tracking)."""
+    global _model_gateway
+    default_model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
+    _model_gateway = ModelGateway(
+        default_model=default_model,
+        usage_tracker=usage_tracker,
+    )
+    return _model_gateway
 
 
 def get_model_gateway() -> ModelGateway:
     """Get or create the global ModelGateway instance."""
     global _model_gateway
     if _model_gateway is None:
-        default_model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
-        _model_gateway = ModelGateway(default_model=default_model)
+        return configure_model_gateway()
     return _model_gateway
 
 

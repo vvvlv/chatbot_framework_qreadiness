@@ -103,6 +103,23 @@ class InteractionLogger:
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_messages_session ON user_messages(session_id);"
             )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS final_reports (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    company_name TEXT NULL,
+                    industry TEXT NULL,
+                    report_text TEXT NOT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+                );
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_final_reports_session ON final_reports(session_id);"
+            )
 
     async def log_event(
         self,
@@ -233,3 +250,41 @@ class InteractionLogger:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+
+    async def log_final_report(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        report_text: str,
+        company_name: Optional[str] = None,
+        industry: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        pool = await self._ensure_pool()
+        safe_report = self._truncate(report_text, self._max_payload_chars * 4) or ""
+        safe_company_name = self._truncate(company_name, 200)
+        safe_industry = self._truncate(industry, 200)
+        payload_json = self._truncate(
+            json.dumps(metadata or {}, ensure_ascii=False),
+            self._max_payload_chars,
+        )
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO final_reports (
+                    session_id,
+                    user_id,
+                    company_name,
+                    industry,
+                    report_text,
+                    metadata
+                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                """,
+                session_id,
+                user_id,
+                safe_company_name,
+                safe_industry,
+                safe_report,
+                payload_json or "{}",
+            )

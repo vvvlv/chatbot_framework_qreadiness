@@ -101,6 +101,7 @@ class QuantumPresenterTool(SubgraphProtocol):
 
         # Find company name and user industry from field "a_use_case_identification"
         print(f"[PRESENTER] Retrieving user industry information...")
+        provided_company_name = (state["stepData"].get("company_name_for_report") or "").strip()
         industry_prompt = f"""Based on the following user message, identify the company name and the industry of the user. Return "unknown" if the user doesn't contain the information needed.
 
 User message :
@@ -136,6 +137,9 @@ Return JSON:
             traceback.print_exc()
             state["stepData"]["industry"] = "unknown"
             state["stepData"]["company_name"] = "unknown"
+
+        if provided_company_name:
+            state["stepData"]["company_name"] = provided_company_name
 
         # Retrieve benchmark documents via RAG
         print(f"[PRESENTER] Retrieving benchmark documents...")

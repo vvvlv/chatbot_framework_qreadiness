@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 import litellm
 from dotenv import load_dotenv
 
+from core.usage_context import get_usage_caller, get_usage_session_id, get_usage_user_id
+
 load_dotenv()
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "true"
 
@@ -16,8 +18,13 @@ os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "true"
 class ModelGateway:
     """LiteLLM-based model gateway."""
 
-    def __init__(self, default_model: str = "mistral/mistral-small-latest") -> None:
+    def __init__(
+        self,
+        default_model: str = "mistral/mistral-small-latest",
+        usage_tracker: Optional[Any] = None,
+    ) -> None:
         self.default_model = default_model
+        self._usage_tracker = usage_tracker
         self._bootstrap_provider_env()
 
     def _bootstrap_provider_env(self) -> None:
@@ -39,10 +46,31 @@ class ModelGateway:
     def _resolve_model(self, model: Optional[str]) -> str:
         return model or os.getenv("LLM_MODEL", self.default_model)
 
+    async def _record_usage(
+        self,
+        *,
+        response: Any,
+        model: str,
+        usage_caller: Optional[str] = None,
+    ) -> None:
+        if self._usage_tracker is None:
+            return
+        try:
+            await self._usage_tracker.log_completion(
+                response=response,
+                model=model,
+                session_id=get_usage_session_id(),
+                user_id=get_usage_user_id(),
+                caller=usage_caller or get_usage_caller() or "model_gateway",
+            )
+        except Exception as exc:
+            print(f"[ModelGateway] Usage tracking failed: {exc}")
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
+        usage_caller: Optional[str] = None,
         **kwargs: Any,
     ) -> str:
         if not self._has_api_key():
@@ -54,6 +82,7 @@ class ModelGateway:
         chosen_model = self._resolve_model(model)
         try:
             resp = await litellm.acompletion(model=chosen_model, messages=messages, **kwargs)
+            await self._record_usage(response=resp, model=chosen_model, usage_caller=usage_caller)
             return resp["choices"][0]["message"]["content"]
         except Exception as e:
             print(f"[ModelGateway] Error: {e}")
