@@ -15,7 +15,11 @@ _model_gateway: Optional[ModelGateway] = None
 def configure_model_gateway(usage_tracker: Optional[UsageTracker] = None) -> ModelGateway:
     """Create or replace the global ModelGateway (optionally with usage tracking)."""
     global _model_gateway
-    default_model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
+    default_model = (
+        os.getenv("LITELLM_DEFAULT_MODEL", "").strip()
+        or os.getenv("LLM_MODEL", "").strip()
+        or "claude-haiku-4-5"
+    )
     _model_gateway = ModelGateway(
         default_model=default_model,
         usage_tracker=usage_tracker,

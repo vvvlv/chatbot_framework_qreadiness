@@ -78,7 +78,8 @@ class QuantumDataCollectorTool(SubgraphProtocol):
     name = "quantum_data_collector"
     VALIDATOR_MODEL = os.getenv(
         "VALIDATOR_MODEL",
-        os.getenv("LLM_MODEL", "mistral/mistral-small-latest"),
+        os.getenv("LITELLM_DEFAULT_MODEL")
+        or os.getenv("LLM_MODEL", "claude-haiku-4-5"),
     )
     FIELD_SPECS: List[FieldSpec] = [
         {

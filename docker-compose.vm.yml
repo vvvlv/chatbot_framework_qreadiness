@@ -1,0 +1,70 @@
+# Production compose for the Hybrid Intelligence VM.
+# Uses the shared LiteLLM proxy (litellm-quantumchatbots) — no local litellm service.
+#
+# Prerequisites:
+#   docker network create caddy
+#   docker network inspect litellm-quantumchatbots-net  # must exist on the VM
+#
+# Usage:
+#   cp backend/env.example backend/.env   # set LITELLM_* and keys
+#   ./scripts/launch_docker.sh docker-compose.vm.yml
+
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: qreadiness-postgres
+    environment:
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: chatbot
+      POSTGRES_DB: chatbot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot -d chatbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - caddy
+
+  backend:
+    build:
+      context: ./backend
+    container_name: qreadiness-backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://chatbot:chatbot@postgres:5432/chatbot
+      INTERACTION_LOG_DB_URL: postgresql://chatbot:chatbot@postgres:5432/chatbot
+      # Proxy reachable on the shared Docker network (override in .env if needed)
+      LITELLM_BASE_URL: http://litellm-quantumchatbots:4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - caddy
+      - litellm-quantumchatbots-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://your-public-backend-url}
+    container_name: qreadiness-frontend
+    depends_on:
+      - backend
+    networks:
+      - caddy
+    restart: unless-stopped
+
+networks:
+  caddy:
+    external: true
+  litellm-quantumchatbots-net:
+    external: true
+
+volumes:
+  postgres_data:

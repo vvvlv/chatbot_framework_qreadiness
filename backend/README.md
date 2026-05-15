@@ -137,9 +137,13 @@ cp env.example .env
 Then set environment variables in `.env`:
 
 ```env
-# LLM Configuration
-LLM_MODEL=mistral/mistral-small-latest
-MISTRAL_API_KEY=your_key_here
+# LiteLLM proxy (production / VM)
+LITELLM_BASE_URL=http://litellm-quantumchatbots:4000
+LITELLM_API_KEY=sk-your-virtual-key
+LITELLM_DEFAULT_MODEL=claude-haiku-4-5
+
+# Or direct provider key for local dev without proxy:
+# MISTRAL_API_KEY=your_key_here
 
 # Runtime and API security
 ENV=dev
