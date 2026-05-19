@@ -16,6 +16,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Optional local LiteLLM for offline dev. On the VM, use docker-compose.vm.yml
+  # and the shared proxy (litellm-quantumchatbots) — see docs/LITELLM_PROXY.md.
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: qreadiness-litellm

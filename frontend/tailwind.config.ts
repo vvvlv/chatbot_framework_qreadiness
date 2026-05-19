@@ -1,19 +1,22 @@
-import type { Config } from 'tailwindcss'
+/** @type {import('tailwindcss').Config} */
 
-const config: Config = {
-  content: [
-    './pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './components/**/*.{js,ts,jsx,tsx,mdx}',
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
-  ],
+export default {
   theme: {
     extend: {
-      colors: {
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
+      typography: {
+        xs: {
+          css: {
+            fontSize: '0.75rem',
+            lineHeight: '1.15rem',
+          },
+        },
+        xxs: {
+          css: {
+            fontSize: '0.6rem',
+            lineHeight: '1rem',
+          },
+        },
       },
     },
   },
-  plugins: [],
 }
-export default config

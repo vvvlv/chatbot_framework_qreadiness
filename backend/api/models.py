@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
     """Chat request model."""
 
     message: str = Field(min_length=1, max_length=4000)
+    user_id: UUID
     session_id: UUID
     prompt_id: Optional[str] = Field(default=None, max_length=128)
 
@@ -26,3 +27,16 @@ class ChatResponse(BaseModel):
 
     message: str
     session_id: UUID
+    # TODO : add error field ?
+
+
+class Feedback(BaseModel):
+    user_id: UUID
+    title: str
+    output: str
+
+# TODO : define other models ? What models ?
+#       - a base model for unspecific requests ?
+#       - request for tools (eg RAG tool) ?
+#       - request for deleting message list
+#       - or for creating a new conversation

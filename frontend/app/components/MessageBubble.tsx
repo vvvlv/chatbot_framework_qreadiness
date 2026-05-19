@@ -1,6 +1,7 @@
 'use client';
 
 import { Message } from '../types';
+import { marked } from 'marked';
 
 interface MessageBubbleProps {
   message: Message;
@@ -13,13 +14,21 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${
+        className={`max-w-[82%] h-max rounded-2xl px-4 py-3 shadow-sm ${
           isUser
-            ? "bg-indigo-500 text-white"
-            : "border border-slate-700/80 bg-slate-900/90 text-slate-100"
+            ? "bg-teal text-white"
+            : "bg-beige text-teal"
         } ${isStreaming ? "opacity-70" : ""}`}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {isUser ?
+        (<span className="md:text-md text-sm">
+          {message.content}
+        </span>)
+        : (<span
+          className="prose md:prose-base prose-sm prose-teal"
+          dangerouslySetInnerHTML={{ __html: marked(message.content) }}
+        />)
+        }
         {isStreaming && (
           <span className="inline-block w-2 h-2 bg-current rounded-full animate-pulse ml-1" />
         )}

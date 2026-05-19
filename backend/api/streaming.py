@@ -7,11 +7,10 @@ According to app_definition.md Section 7, all events follow a typed envelope:
   "payload": {},
   "meta": {
     "session_id": "<str>",
-    "active_tool": "<tool_name> | null",
-    "tool_step": "<int> | null",
-    "tool_total": "<int> | null",
+    "current_step": "<step_name> | null",
     "resumable": "<bool>",
-    "can_escape": "<bool>"
+    "can_escape": "<bool>",
+    "pending_prompt_id": "<str>"
   }
 }
 """
@@ -20,28 +19,7 @@ import traceback
 from typing import Any, AsyncIterator, Dict, Optional
 
 from langgraph.types import Command
-
-
-def _extract_interrupt_question(state) -> Optional[str]:
-    """
-    Best-effort extraction of interrupt question text from suspended state.
-    """
-    if not state or not hasattr(state, "tasks") or not state.tasks:
-        return None
-
-    for task in state.tasks:
-        interrupts = getattr(task, "interrupts", None)
-        if not interrupts:
-            continue
-        for intr in interrupts:
-            value = getattr(intr, "value", None)
-            if isinstance(value, str) and value.strip():
-                return value
-            if isinstance(value, dict):
-                text = value.get("text") or value.get("question")
-                if isinstance(text, str) and text.strip():
-                    return text
-    return None
+from api.custom_events import eventSelector
 
 
 def _extract_interrupt_payload(state) -> Optional[Dict]:
@@ -60,19 +38,11 @@ def _extract_interrupt_payload(state) -> Optional[Dict]:
     return None
 
 
-def _extract_pending_prompt_id(state) -> Optional[str]:
-    if not state or not hasattr(state, "values") or not state.values:
-        return None
-    pending_prompt_id = state.values.get("pending_prompt_id")
-    if isinstance(pending_prompt_id, str) and pending_prompt_id.strip():
-        return pending_prompt_id
-    return None
-
-
 async def stream_graph_events(
     graph,
     input_,
     config: Dict,
+    user_id: str,
     interaction_logger=None,
 ) -> AsyncIterator[str]:
     """
@@ -109,6 +79,7 @@ async def stream_graph_events(
             await interaction_logger.log_event(
                 session_id=session_id,
                 event_type=event_type,
+                user_id=user_id,
                 app_name=app_name,
                 tool_name=tool_name,
                 payload=payload or {},
@@ -135,8 +106,6 @@ async def stream_graph_events(
     
     # Stream graph execution events
     event_count = 0
-    emitted_tool_question = False
-    last_tool_question_key = None
     try:
         async for event in graph.astream_events(input_, config=config, version="v2"):
             event_count += 1
@@ -158,63 +127,9 @@ async def stream_graph_events(
                 # Custom events from tools/subgraphs
                 name = event.get("name")
                 data = event.get("data", {})
-                
-                if name == "tool_start":
-                    print(f"[SSE_STREAM] Tool started: {data.get('tool_name')}")
-                    await _log_event(
-                        "tool_start",
-                        tool_name=data.get("tool_name"),
-                        payload=data,
-                    )
-                    meta = await _refresh_meta()
-                    yield _sse("tool_start", data, {
-                        **meta,
-                        "active_tool": data.get("tool_name"),
-                        "tool_total": data.get("total_steps"),
-                    })
-                
-                elif name == "tool_question":
-                    print(f"[SSE_STREAM] Tool question: {data.get('text', '')[:50]}...")
-                    await _log_event(
-                        "tool_question",
-                        tool_name=data.get("tool_name"),
-                        payload={
-                            "text": data.get("text"),
-                            "prompt_id": data.get("prompt_id"),
-                            "step": data.get("step"),
-                        },
-                    )
-                    text = data.get("text")
-                    prompt_id = data.get("prompt_id")
-                    # Deduplicate identical tool_question emissions within the same stream.
-                    if isinstance(text, str) and text.strip():
-                        dedup_key = f"{prompt_id}:{text}"
-                        if dedup_key == last_tool_question_key:
-                            continue
-                        last_tool_question_key = dedup_key
-
-                    emitted_tool_question = True
-                    meta = await _refresh_meta()
-                    yield _sse(
-                        "tool_question",
-                        data,
-                        {
-                        **meta,
-                        "resumable": True,
-                        "can_escape": True,
-                        "tool_step": data.get("step"),
-                        "pending_prompt_id": prompt_id or meta.get("pending_prompt_id"),
-                        },
-                    )
-                
-                elif name in ("tool_progress", "tool_complete"):
-                    print(f"[SSE_STREAM] Tool {name}: {data}")
-                    await _log_event(
-                        name,
-                        tool_name=data.get("tool_name"),
-                        payload=data,
-                    )
-                    yield _sse(name, data, await _refresh_meta())
+                meta = await _refresh_meta()
+                type_, payload, meta = await eventSelector(name, data, meta, _log_event)
+                yield _sse(type_, payload, meta)
             
             elif kind == "on_chain_error":
                 # Error handling
@@ -231,6 +146,7 @@ async def stream_graph_events(
                 }, await _refresh_meta())
             
             elif kind == "on_chain_start":
+                # begining of a node/subgraph
                 node_name = event.get("name", "")
                 if node_name:
                     print(f"[SSE_STREAM] Node started: {node_name}")
@@ -241,6 +157,7 @@ async def stream_graph_events(
                     )
             
             elif kind == "on_chain_end":
+                # end of a node/subgraph
                 node_name = event.get("name", "")
                 if node_name:
                     print(f"[SSE_STREAM] Node ended: {node_name}")
@@ -268,34 +185,23 @@ async def stream_graph_events(
         )
 
         if is_suspended_now:
-            payload = _extract_interrupt_payload(final_state)
-            question = payload.get("text") if isinstance(payload, dict) else _extract_interrupt_question(final_state)
-            # The tool typically already emits tool_question before calling interrupt().
-            # Avoid duplicating the same question here.
-            if question and not emitted_tool_question:
-                print(f"[SSE_STREAM] Emitting tool_question ({len(question)} chars)")
-                pending_prompt_id = _extract_pending_prompt_id(final_state)
-                yield _sse(
-                    "tool_question",
-                    {
-                        "text": question,
-                        "input_type": (payload or {}).get("input_type", "free_text"),
-                        "prompt_id": (payload or {}).get("prompt_id", pending_prompt_id),
-                        "step": (payload or {}).get("step"),
-                        "can_skip": (payload or {}).get("can_skip", True),
-                    },
-                    {
-                        **await _refresh_meta(),
-                        "resumable": True,
-                        "can_escape": True,
-                        "pending_prompt_id": (payload or {}).get("prompt_id", pending_prompt_id),
-                    },
-                )
-            yield _sse(
-                "tool_waiting_input",
-                {"prompt_id": _extract_pending_prompt_id(final_state)},
-                {**await _refresh_meta(), "resumable": True, "can_escape": True},
+            print(f"[SSE_STREAM] Interrupt - Waiting for user input")
+            interrupt_values = _extract_interrupt_payload(final_state)
+            meta = await _refresh_meta()
+            if meta.get("pending_prompt_id", None) == None:
+                meta["pending_prompt_id"] = interrupt_values.get("prompt_id", None)
+            if interrupt_values.get("prompt_id", None) == None:
+                interrupt_values["prompt_id"] = meta.get("pending_prompt_id", None)
+            await _log_event(
+                interrupt_values.get("event_name", "interrupt"),
+                payload=interrupt_values,
             )
+            yield _sse(
+                interrupt_values.get("event_name", "interrupt"),
+                interrupt_values,
+                meta,
+            )
+
         else:
             final_output: Optional[str] = None
             if final_state and hasattr(final_state, "values") and final_state.values:
@@ -306,6 +212,40 @@ async def stream_graph_events(
 
             if final_output:
                 print(f"[SSE_STREAM] Emitting text_done ({len(final_output)} chars)")
+                step_data = {}
+                if final_state and hasattr(final_state, "values") and final_state.values:
+                    step_data = final_state.values.get("stepData", {}) or {}
+                report_save_opt_out = bool(step_data.get("report_save_opt_out", False))
+                is_quantum_report = "QUANTUM READINESS REPORT" in final_output
+                if is_quantum_report and interaction_logger is not None:
+                    if report_save_opt_out:
+                        await _log_event(
+                            "final_report_not_saved",
+                            payload={"reason": "opt_out"},
+                        )
+                    else:
+                        try:
+                            await interaction_logger.log_final_report(
+                                session_id=session_id,
+                                user_id=user_id,
+                                report_text=final_output,
+                                company_name=step_data.get("company_name") or step_data.get("company_name_for_report"),
+                                industry=step_data.get("industry"),
+                                metadata={
+                                    "archetype": step_data.get("archetype"),
+                                    "quantum_opportunity_score": step_data.get("quantum_opportunity_score"),
+                                },
+                            )
+                            await _log_event(
+                                "final_report_saved",
+                                payload={"saved": True},
+                            )
+                        except Exception as exc:
+                            print(f"[SSE_STREAM] ⚠ Failed to persist final report: {exc}")
+                            await _log_event(
+                                "final_report_save_failed",
+                                payload={"error": str(exc)},
+                            )
                 await _log_event(
                     "stream_output_complete",
                     payload={"output_length": len(final_output)},
@@ -355,9 +295,7 @@ def _build_meta(config: Dict, state) -> Dict: # TODO: update with new states
     
     meta = {
         "session_id": thread_id,
-        "active_tool": None,
-        "tool_step": None,
-        "tool_total": None,
+        "current_step": None,
         "resumable": False,
         "can_escape": False,
         "pending_prompt_id": None,
@@ -369,16 +307,12 @@ def _build_meta(config: Dict, state) -> Dict: # TODO: update with new states
             meta["resumable"] = True
             meta["can_escape"] = True
         
-        # Extract active_tool from state if available
+        # Extract metadata from state if available
         if hasattr(state, "values") and state.values:
             values = state.values
-            meta["active_tool"] = values.get("active_tool")
+            meta["current_step"] = values.get("currentStep")
             meta["pending_prompt_id"] = values.get("pending_prompt_id")
-            if meta["active_tool"]:
-                # Try to extract tool step info from state
-                meta["tool_step"] = values.get("step")
-                tool_output = values.get("tool_output", {})
-                if isinstance(tool_output, dict) and tool_output.get("total"):
-                    meta["tool_total"] = tool_output.get("total")
+        
+        # TODO : other metadata from state snapshot ?
     
     return meta

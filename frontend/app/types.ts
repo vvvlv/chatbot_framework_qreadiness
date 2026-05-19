@@ -4,7 +4,7 @@
  * According to app_definition.md Section 7, all events follow a typed envelope.
  */
 
-export type UIState = "idle" | "streaming" | "tool_active" | "awaiting_input" | "error";
+export type UIState = "idle" | "streaming" | "tool_active" | "awaiting_input" | "error" | "awaiting_assistant";
 
 export interface SSEEvent {
   type: string;
@@ -35,10 +35,15 @@ export interface ToolMeta {
 
 export interface QuestionEvent {
   text: string;
-  step: number;
   prompt_id?: string;
   input_type: "free_text" | "choice" | "number" | "date" | "confirm";
   options?: string[];
   min?: number;
   max?: number;
+}
+
+export interface Feedback {
+  user_id: string;
+  title: string;
+  output: number | string;
 }

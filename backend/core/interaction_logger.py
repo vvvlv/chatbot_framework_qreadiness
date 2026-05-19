@@ -72,6 +72,7 @@ class InteractionLogger:
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     session_id TEXT NOT NULL,
                     event_type TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
                     app_name TEXT NULL,
                     tool_name TEXT NULL,
                     user_message TEXT NULL,
@@ -91,6 +92,7 @@ class InteractionLogger:
                     id BIGSERIAL PRIMARY KEY,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
                     message TEXT NOT NULL,
                     is_resume BOOLEAN NOT NULL DEFAULT FALSE,
                     prompt_id TEXT NULL,
@@ -101,12 +103,30 @@ class InteractionLogger:
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_messages_session ON user_messages(session_id);"
             )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS final_reports (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    company_name TEXT NULL,
+                    industry TEXT NULL,
+                    report_text TEXT NOT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+                );
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_final_reports_session ON final_reports(session_id);"
+            )
 
     async def log_event(
         self,
         *,
         session_id: str,
         event_type: str,
+        user_id: str,
         app_name: Optional[str] = None,
         tool_name: Optional[str] = None,
         user_message: Optional[str] = None,
@@ -121,14 +141,16 @@ class InteractionLogger:
                 INSERT INTO interaction_events (
                     session_id,
                     event_type,
+                    user_id,
                     app_name,
                     tool_name,
                     user_message,
                     payload_json
-                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
                 """,
                 session_id,
                 event_type,
+                user_id,
                 app_name,
                 tool_name,
                 user_message,
@@ -145,7 +167,7 @@ class InteractionLogger:
         pool = await self._ensure_pool()
         if session_id:
             query = """
-                SELECT id, created_at, session_id, event_type, app_name, tool_name, user_message, payload_json
+                SELECT id, created_at, session_id, event_type, user_id, app_name, tool_name, user_message, payload_json
                 FROM interaction_events
                 WHERE session_id = $1
                 ORDER BY id DESC
@@ -154,7 +176,7 @@ class InteractionLogger:
             params = (session_id, limit)
         else:
             query = """
-                SELECT id, created_at, session_id, event_type, app_name, tool_name, user_message, payload_json
+                SELECT id, created_at, session_id, event_type, user_id, app_name, tool_name, user_message, payload_json
                 FROM interaction_events
                 ORDER BY id DESC
                 LIMIT $1
@@ -178,6 +200,7 @@ class InteractionLogger:
                     "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                     "session_id": row["session_id"],
                     "event_type": row["event_type"],
+                    "user_id": row["user_id"],
                     "app_name": row["app_name"],
                     "tool_name": row["tool_name"],
                     "user_message": row["user_message"],
@@ -190,6 +213,7 @@ class InteractionLogger:
         self,
         *,
         session_id: str,
+        user_id,
         message: str,
         is_resume: bool = False,
         prompt_id: Optional[str] = None,
@@ -206,13 +230,15 @@ class InteractionLogger:
                 """
                 INSERT INTO user_messages (
                     session_id,
+                    user_id,
                     message,
                     is_resume,
                     prompt_id,
                     metadata
-                ) VALUES ($1, $2, $3, $4, $5::jsonb)
+                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
                 """,
                 session_id,
+                user_id,
                 safe_message,
                 is_resume,
                 prompt_id,
@@ -224,3 +250,41 @@ class InteractionLogger:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+
+    async def log_final_report(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        report_text: str,
+        company_name: Optional[str] = None,
+        industry: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        pool = await self._ensure_pool()
+        safe_report = self._truncate(report_text, self._max_payload_chars * 4) or ""
+        safe_company_name = self._truncate(company_name, 200)
+        safe_industry = self._truncate(industry, 200)
+        payload_json = self._truncate(
+            json.dumps(metadata or {}, ensure_ascii=False),
+            self._max_payload_chars,
+        )
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO final_reports (
+                    session_id,
+                    user_id,
+                    company_name,
+                    industry,
+                    report_text,
+                    metadata
+                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                """,
+                session_id,
+                user_id,
+                safe_company_name,
+                safe_industry,
+                safe_report,
+                payload_json or "{}",
+            )

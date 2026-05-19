@@ -3,7 +3,10 @@
 import { useChat } from '../hooks/useChat';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
-import { useState, useEffect } from 'react';
+import { ToolChrome } from './ToolChrome';
+import { useState, useEffect, useRef } from 'react';
+import { Feedbacks } from './Feedbacks';
+import { HelpPopup } from './HelpPopup';
 
 export function ChatWindow() {
   const isUuid = (value: string): boolean => {
@@ -11,14 +14,26 @@ export function ChatWindow() {
       value
     );
   };
+  
+  let initSessionId : string = crypto.randomUUID();
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('session_id');
+    if (stored && isUuid(stored)) {
+      initSessionId = stored;
+    }
+    else {
+      localStorage.setItem('session_id', initSessionId);
+    }
+  }
+  const [sessionId, setSessionId] = useState<string>(initSessionId);
 
-  const [sessionId] = useState(() => {
+  const [userId] = useState(() => {
     // Generate or retrieve session ID
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('session_id');
+      const stored = localStorage.getItem('user_id');
       if (stored && isUuid(stored)) return stored;
       const newId = crypto.randomUUID();
-      localStorage.setItem('session_id', newId);
+      localStorage.setItem('user_id', newId);
       return newId;
     }
     return crypto.randomUUID();
@@ -30,14 +45,16 @@ export function ChatWindow() {
     toolMeta,
     currentQuestion,
     error,
+    lockChatInput,
     currentResponse,
     send,
-  } = useChat(sessionId);
+    deleteHistory,
+    sendFeedback,
+  } = useChat(sessionId, setSessionId, userId);
 
   const steps = [
     "Welcome",
-    "Quantum Competitiveness",
-    "Cryptographic Risk & Post-Quantum Security",
+    "Quantum Readiness",
     "Report",
   ] as const;
 
@@ -48,125 +65,167 @@ export function ChatWindow() {
     );
     if (!toolMeta) {
       // Avoid flashing "completed" before tool_start arrives.
-      return hasFinalReport ? 3 : 1;
+      return hasFinalReport ? 2 : 1;
     }
 
     // Analyzer/presenter phases belong to the final report stage.
     if (toolMeta.name === "quantum_analyzer" || toolMeta.name === "quantum_presenter") {
-      return 3;
+      return 2;
     }
 
-    const currentToolStep = currentQuestion?.step ?? toolMeta?.step ?? 0;
+    const currentToolStep = toolMeta?.step ?? 0;
     if (toolMeta) {
       const total = Math.max(1, toolMeta.total || 1);
-      const branchASteps = Math.ceil(total / 2);
       if (currentToolStep <= 0) return 1;
-      if (currentToolStep <= branchASteps) return 1;
-      if (currentToolStep <= total) return 2;
+      if (currentToolStep <= total) return 1;
     }
-    return 3;
+    return 1;
   })();
 
-  const theme = [
-    {
-      shell: "from-slate-950 via-slate-900 to-slate-950",
-      accent: "bg-slate-500",
-      ring: "ring-slate-600/40",
-      text: "text-slate-200",
-    },
-    {
-      shell: "from-indigo-950 via-slate-900 to-slate-950",
-      accent: "bg-indigo-500",
-      ring: "ring-indigo-600/40",
-      text: "text-indigo-200",
-    },
-    {
-      shell: "from-cyan-950 via-slate-900 to-slate-950",
-      accent: "bg-cyan-500",
-      ring: "ring-cyan-600/40",
-      text: "text-cyan-200",
-    },
-    {
-      shell: "from-emerald-950 via-slate-900 to-slate-950",
-      accent: "bg-emerald-500",
-      ring: "ring-emerald-600/40",
-      text: "text-emerald-200",
-    },
-  ][activeStep];
+  const showSubSteps = (toolMeta ? toolMeta.name === "quantum_data_collector" : false);
 
   const showProcessingIndicator =
-    Boolean(toolMeta) &&
-    uiState === "tool_active" &&
-    !currentQuestion &&
-    !currentResponse;
+    uiState === "awaiting_assistant" || (
+      Boolean(toolMeta) &&
+      uiState === "tool_active" &&
+      !currentQuestion &&
+      !currentResponse
+    );
 
   const processingText = (() => {
-    if (!toolMeta) return "Processing assessment...";
+    if (!toolMeta) return "Processing answer...";
     if (toolMeta.name === "quantum_analyzer") return "Analyzing your branch responses...";
     if (toolMeta.name === "quantum_presenter") return "Generating your readiness report...";
-    return "Processing assessment...";
+    return "Processing answer...";
   })();
 
-  return (
-    <div className={`flex h-screen flex-col bg-gradient-to-b ${theme.shell} transition-colors duration-500`}>
-      <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/70 px-6 py-4 backdrop-blur">
-        <h1 className="text-2xl font-bold text-white">
-          Quantum Readiness Chatbot
-        </h1>
-        <p className="mt-1 text-sm text-slate-300">
-          Assess your company's quantum readiness through a structured conversational workflow
-        </p>
+  // keep scroll at the bottom of message list
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-        <div className="mt-4 grid grid-cols-4 gap-2">
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState<boolean>(false);
+  const [showHelpPopup, setShowHelpPopup] = useState<boolean>(false);
+
+  return (
+    <div className={`flex relative h-screen flex-col bg-white`}>
+      <header className="sticky top-0 bg-skyblue px-6 py-4 shadow-sm">
+        <div className="flex flex-col xs:flex-row-reverse flex-1 xs:justify-between xs:items-center gap-2">
+          <div className="flex-1 xs:flex-none flex flex-col items-end gap-1">
+            <span className="font-paragraph text-[10px] text-slate-500 text-right max-w-[220px] truncate">
+              Session {sessionId}
+            </span>
+            <div className="flex flex-row items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowHelpPopup(true)}
+                className="inline-flex xs:hidden items-center justify-center rounded-full aspect-square h-6 py-2 xs:h-0 xs:py-0 text-sm font-title font-bold bg-navy text-white hover:bg-navy/80 hover:cursor-pointer"
+              >
+                ?
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFeedbackPopup(true);
+                }}
+                className="h-max rounded-xl bg-navy px-4 md:px-6 py-2 font-paragraph lg:text-md md:text-sm text-xs text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                Feedback
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <div className="flex gap-6 items-center">
+              <h1 className="md:text-3xl text-2xl font-title font-bold text-navy">
+                Quantum Readiness Chatbot
+              </h1>
+              <button
+                type="button"
+                onClick={() => setShowHelpPopup(true)}
+                className="xs:inline-flex hidden items-center justify-center rounded-full aspect-square h-0 py-0 xs:h-6 xs:py-2 text-sm font-title font-bold bg-navy text-white hover:bg-navy/80 hover:cursor-pointer"
+              >
+                ?
+              </button>
+            </div>
+            <p className="mt-1 md:text-sm text-xs text-teal font-paragraph">
+              Are you quantum ready? Find out now with a 10-minute conversation.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-2">
           {steps.map((step, index) => {
             const isActive = index === activeStep;
             const isDone = index < activeStep;
+            const workflowStep = step === "Quantum Readiness";
             return (
               <div
                 key={step}
-                className={`rounded-xl border px-3 py-2 transition ${
+                className={`flex rounded-xl border md:px-3 px-2 py-2 overflow-hidden transition ${
                   isActive
-                    ? `border-slate-600 bg-slate-900 ring-1 ${theme.ring}`
-                    : "border-slate-800 bg-slate-950/80"
+                    ? `bg-white border-navy ring-1 ring-navy`
+                    : isDone ?
+                    "border-skyblue ring-0 bg-navy"
+                    : "border-skyblue ring-0 bg-white"
                 }`}
               >
-                <div className="mb-2 flex items-center gap-2">
-                  <span
-                    className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
-                      isActive || isDone ? `${theme.accent} text-white` : "bg-slate-800 text-slate-400"
-                    }`}
-                  >
-                    {index + 1}
-                  </span>
-                  <span className={`text-[11px] font-semibold ${isActive ? theme.text : "text-slate-400"}`}>
-                    {isActive ? "Active" : isDone ? "Done" : "Pending"}
-                  </span>
+                <div className="flex flex-col overflow-hidden">
+                  <div className="mb-2 flex items-center gap-2 overflow-hidden">
+                    <span
+                      className={`inline-flex h-4 w-4 md:h-5 md:w-5 items-center justify-center rounded-full md:text-[11px] text-[9px] font-title font-bold ${
+                        isActive ? `bg-navy text-white` : isDone ? `bg-white text-navy` : "bg-slate-400 text-white"
+                      }`}
+                    >
+                      {index + 1}
+                    </span>
+                    <span className={`md:text-[11px] text-[9px] truncate font-paragraph font-semibold ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>
+                      {isActive ? "Active" : isDone ? "Done" : "Pending"}
+                    </span>
+                  </div>
+                  <p className={`md:text-xs text-[9px] truncate font-paragraph ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>{step}</p>
                 </div>
-                <p className={`text-xs ${isActive ? "text-slate-100" : "text-slate-400"}`}>{step}</p>
+                {workflowStep && (
+                  <div className="hidden md:block flex-1">
+                    <ToolChrome
+                      toolMeta={toolMeta}
+                      visible={activeStep === 1}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+
+        {showSubSteps && (
+          <div className="md:hidden block md:h-0 flex-1">
+            <ToolChrome
+              toolMeta={toolMeta}
+              visible={activeStep === 1}
+            />
+          </div>
+        )}
       </header>
 
       {/* Messages */}
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+      <div className="flex-1 space-y-4 overflow-y-auto xs:px-6 px-4 py-5">
         {messages.length === 0 && (
           <div className="h-full flex items-center justify-center">
-            <div className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 text-center shadow-xl">
-              <p className="text-lg font-medium text-slate-100">
-                Choose an app to start
+            <div className="max-w-md rounded-2xl bg-skyblue p-8 text-center shadow-xl">
+              <p className="md:text-2xl text-xl font-title font-bold text-navy">
+                Click below to start a workflow.
               </p>
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="mt-2 font-paragraph md:text-sm text-xs text-teal">
                 Start the structured workflow without typing a command.
               </p>
               <button
                 type="button"
                 disabled={uiState === "streaming"}
                 onClick={() => send("assessment")}
-                className="mt-6 w-full rounded-xl bg-indigo-500 px-6 py-3 text-white hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+                className="mt-6 w-full rounded-xl bg-teal xs:px-6 px-4 py-3 md:text-md xs:text-sm text-xs text-white font-paragraph hover:bg-teal/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                Start Quantum Readiness Assessment
+                Quantum Readiness Assessment
               </button>
             </div>
           </div>
@@ -178,13 +237,13 @@ export function ChatWindow() {
 
         {showProcessingIndicator && (
           <div className="flex justify-start">
-            <div className="max-w-[82%] rounded-2xl border border-slate-700/80 bg-slate-900/90 px-4 py-3 text-slate-100 shadow-sm">
+            <div className="max-w-[82%] rounded-2xl bg-beige text-teal px-4 py-3 shadow-sm">
               <div className="flex items-center gap-3">
                 <span className="relative inline-flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-navy opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-navy" />
                 </span>
-                <span className="text-sm text-slate-200">{processingText}</span>
+                <span className="text-sm text-teal">{processingText}</span>
               </div>
             </div>
           </div>
@@ -209,17 +268,38 @@ export function ChatWindow() {
             <p className="text-red-200">{error}</p>
           </div>
         )}
+
+        {/* Keep scroll at the bottom */}
+        <div ref={bottomRef}></div>
       </div>
 
       {/* Input */}
-      <div className="border-t border-slate-800 bg-slate-950/90 px-6 py-4 backdrop-blur">
+      <div className="bg-skyblue md:px-6 md:py-4 px-3 py-2 shadow-sm">
         <ChatInput
           onSend={send}
-          disabled={uiState === "streaming"}
+          onDelete={deleteHistory}
+          disabled={uiState === "streaming" || lockChatInput}
           currentQuestion={currentQuestion}
           uiState={uiState}
         />
       </div>
+
+      {/* Feedback popup */}
+      {showFeedbackPopup && (
+        <>
+          <div className="absolute bg-slate-950/50 inset-0" onClick={() => setShowFeedbackPopup(false)}></div>
+          <Feedbacks onSend={sendFeedback} close={() => setShowFeedbackPopup(false)} user_id={userId}/>
+        </>
+      )}
+
+      {/* Help popup */}
+      {showHelpPopup && (
+        <>
+          <div className="absolute bg-slate-950/50 inset-0" onClick={() => setShowHelpPopup(false)}></div>
+          <HelpPopup close={() => setShowHelpPopup(false)}/>
+        </>
+      )}
+
     </div>
   );
 }
