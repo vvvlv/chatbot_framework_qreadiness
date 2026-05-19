@@ -102,6 +102,7 @@ class QuantumPresenterTool(SubgraphProtocol):
         # Find company name and user industry from field "a_use_case_identification"
         print(f"[PRESENTER] Retrieving user industry information...")
         provided_company_name = (state["stepData"].get("company_name_for_report") or "").strip()
+        extracted_company_candidate = "unknown"
         industry_prompt = f"""Based on the following user message, identify the company name and the industry of the user. Return "unknown" if the user doesn't contain the information needed.
 
 User message :
@@ -126,20 +127,22 @@ Return JSON:
                 json_str = industry_response[json_start:json_end]
                 industry_result = json.loads(json_str)
                 state["stepData"]["industry"] = industry_result.get("industry", "unknown")
-                state["stepData"]["company_name"] = industry_result.get("company_name", "unknown")
+                extracted_company_candidate = str(industry_result.get("company_name", "unknown") or "unknown")
                 print(f"[PRESENTER] ✓ Retrieved user's company name and industry")
             else:
                 print(f"[PRESENTER] ⚠ Could not parse actions JSON from LLM response")
                 state["stepData"]["industry"] = "unknown"
-                state["stepData"]["company_name"] = "unknown"
         except Exception as e:
             print(f"[PRESENTER] ✗ Error finding user industry information: {e}")
             traceback.print_exc()
             state["stepData"]["industry"] = "unknown"
-            state["stepData"]["company_name"] = "unknown"
 
-        if provided_company_name:
-            state["stepData"]["company_name"] = provided_company_name
+        resolved_company_name = await self._resolve_company_name(
+            provided_company_name=provided_company_name,
+            extracted_candidate=extracted_company_candidate,
+            user_context=str(state["stepData"].get("user_industry", "") or ""),
+        )
+        state["stepData"]["company_name"] = resolved_company_name or "unknown"
 
         # Retrieve benchmark documents via RAG
         print(f"[PRESENTER] Retrieving benchmark documents...")
@@ -348,3 +351,46 @@ Company: {company} | Sector: {industry} | Date: {today}
             return "Moderate Opportunity"
         else:
             return "Low Opportunity"
+
+    async def _resolve_company_name(
+        self,
+        provided_company_name: str,
+        extracted_candidate: str,
+        user_context: str,
+    ) -> str:
+        prompt = f"""Resolve the best company name for a report header.
+
+Provided name from user preference step: {provided_company_name or "unknown"}
+Candidate extracted from context: {extracted_candidate or "unknown"}
+User context: {user_context}
+
+Return STRICT JSON:
+{{
+  "company_name": "<name or unknown>",
+  "is_valid_company_name": true/false
+}}
+
+Rules:
+- Prefer the provided name if it is a real company name.
+- If provided is invalid or missing, use extracted candidate if valid.
+- If neither is valid, return unknown/false.
+- Reject sentence fragments, refusals, or descriptive statements.
+- No markdown.
+"""
+        try:
+            response = await self._model_gateway.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+            )
+            text = (response or "").strip()
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            data = json.loads(text[start:end]) if start >= 0 and end > start else {}
+            company_name = " ".join(str(data.get("company_name", "")).strip().split()).strip("\"'")
+            if not bool(data.get("is_valid_company_name")):
+                return "unknown"
+            if not company_name or company_name.lower() == "unknown":
+                return "unknown"
+            return company_name[:120]
+        except Exception:
+            return "unknown"

@@ -17,7 +17,7 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
         },
         {
             "title": "Quantum Readiness - Data Collection",
-            "content": "How much relevant were the chatbot's questions/interactions preceding the Quantum Readiness report ?",
+            "content": "How relevant were the chatbot's questions preceding the Quantum Readiness report ?",
             "default": 0,
         },
         {
@@ -26,13 +26,8 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
             "default": 0,
         },
         {
-            "title": "Chatbot - Overall discussion",
-            "content": "How much did you enjoy the discussion with the chatbot ?",
-            "default": 0,
-        },
-        {
             "title": "Additional Comments",
-            "content": "Do you have any other feedback or challenges to share (e.g., accuracy, speed, UI issues) ?",
+            "content": "Do you have any other feedback to share (e.g., accuracy, speed, UI issues) ?",
             "default": "",
         },
         {
@@ -43,6 +38,9 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
     ];
     const [currentTopic, setCurrentTopic] = useState<number>(0);
     const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+    const ratingStepCount = 3;
+    const commentStepIndex = 3;
+    const finalStepIndex = topicList.length - 1;
     const initFeedback = (idx: number) => {
         return {
             user_id: user_id,
@@ -52,20 +50,17 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
     };
     const [currentFeedback, setCurrentFeedback] = useState<Feedback>(initFeedback(0));
     return (
-        <div className="flex flex-col absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 md:1/3 xs:w-2/5 xs:min-w-xs w-9/10 bg-beige rounded-2xl px-4 py-4 md:px-6 md:py-6 items-center gap-4">
+        <div className="flex flex-col absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 md:1/3 xs:w-2/5 xs:min-w-xs w-9/10 bg-skyblue rounded-2xl px-4 py-4 md:px-6 md:py-6 items-center gap-4 border border-navy/20 shadow-lg">
             <span className="absolute top-3 right-4 text-navy text-3xl font-bold cursor-pointer" onClick={close}>
                 ×
             </span>
             <h2 className="font-title font-bold md:text-3xl xs:text-2xl text-xl text-navy text-center">
                 Your Feedback
             </h2>
-            <h4 className="font-title md:text-xl xs:text-lg text-md text-navy text-center">
-                {topicList[currentTopic].title}
-            </h4>
             <p className="font-paragraph xs:text-sm text-xs text-teal text-center">
                 {topicList[currentTopic].content}
             </p>
-            {currentTopic < 4 ? (
+            {currentTopic < ratingStepCount ? (
                 <StarRating onStar={(value: number) => {
                     const tmpCurrentFeedback = {...currentFeedback};
                     tmpCurrentFeedback.output = String(value);
@@ -73,7 +68,7 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
                     setCurrentFeedback(initFeedback(currentTopic + 1));
                     setCurrentTopic((prev: number) => prev + 1);
                 }} />
-            ) : currentTopic === 4 ? (
+            ) : currentTopic === commentStepIndex ? (
                 <textarea
                     value={currentFeedback.output}
                     placeholder="Share your feedback..."
@@ -86,21 +81,25 @@ export function Feedbacks({ onSend, close, user_id }: FeedbackProps) {
                     Close
                 </button>
             }
-            {currentTopic < 5 && (
+            {currentTopic < finalStepIndex && (
                 <div className="flex gap-4">
                     <button
                         onClick={() => {
-                            if (feedbacks.length > 0 && feedbacks[feedbacks.length-1]?.title === topicList[currentTopic-1].title) {
-                                setFeedbacks((prev:Feedback[]) => prev.splice(-1, 1));
+                            if (currentTopic <= 0) {
+                                return;
+                            }
+                            if (feedbacks.length > 0 && feedbacks[feedbacks.length - 1]?.title === topicList[currentTopic - 1].title) {
+                                setFeedbacks((prev: Feedback[]) => prev.slice(0, -1));
                             }
                             setCurrentFeedback(initFeedback(currentTopic - 1));
                             setCurrentTopic((prev: number) => prev - 1);
                         }}
-                        className="bg-white rounded-xl px-4 py-2 hover:bg-slate-100 text-navy md:text-sm text-xs font-paragraph hover:cursor-pointer"
+                        className="bg-white rounded-xl px-4 py-2 hover:bg-slate-100 text-navy md:text-sm text-xs font-paragraph hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={currentTopic === 0}
                     >
                         Back
                     </button>
-                    {currentTopic < 4 ? (
+                    {currentTopic < ratingStepCount ? (
                         <button
                             onClick={() => {
                                 setCurrentFeedback(initFeedback(currentTopic + 1));

@@ -63,6 +63,7 @@ class QuantumAnalyzerTool(SubgraphProtocol):
         print(f"[ANALYZER] Input data keys: {list(state['stepData'].keys())}")
 
         stepData : QuantumAnalyzerState = {
+            **(state["stepData"]),
             "branch_a_topics": state["stepData"]["branch_a_topics"],
             "quantum_opportunity_score": None,
             "archetype": None,
@@ -187,7 +188,7 @@ class QuantumAnalyzerTool(SubgraphProtocol):
         narrative_prompt = f"""Generate a 2-3 sentence narrative explaining what the "{archetype}" archetype means for this company.
 
 Context:
-- Company: {state['stepData'].get('company_name', 'Unknown')}
+- Company: {state['stepData'].get('company_name_for_report') or state['stepData'].get('company_name', 'Unknown')}
 - Industry: {state['stepData'].get('user_industry', 'Unknown')}
 - Branch A (Quantum Competitiveness): {branch_a_score:.1f}/100
 
@@ -326,6 +327,7 @@ Output STRICT JSON with this format :
                 temperature=0.1,
             )
             raw_model_output = (raw or "").strip()
+            raw_model_output = raw_model_output.replace("```json", "").replace("```", "").strip()
             start = raw_model_output.find("[")
             end = raw_model_output.rfind("]") + 1
             data = json.loads(raw_model_output[start:end]) if start >= 0 and end > start else []
@@ -333,7 +335,12 @@ Output STRICT JSON with this format :
                 if isinstance(item, dict) and item.get("field") and item["field"] in specs.keys() and item.get("rubrics"):
                     parsed_scores[str(item["field"])] = {}
                     for item2 in item.get("rubrics"):
-                        if isinstance(item2, dict) and item2.get("rubric") and item2["rubric"] in specs[item["field"]].keys() and item2.get("score"):
+                        if (
+                            isinstance(item2, dict)
+                            and item2.get("rubric")
+                            and item2["rubric"] in specs[item["field"]].keys()
+                            and item2.get("score") is not None
+                        ):
                             parsed_scores[str(item["field"])][str(item2["rubric"])] = {
                                 "score": int(item2.get("score", 0)),
                                 "reason": str(item2.get("reason", "")),
