@@ -8,11 +8,11 @@ interface HelpProps {
 const Page1 = () => {
     return (
         <div className="flex flex-col flex-1 gap-4 self-stretch">
-            <div className="relative prose prose-sm prose-teal max-w-none">
+            <div className="relative prose md:prose-sm xs:prose-xs prose-xxs prose-teal max-w-none">
                 <h2>
                     How to use the chatbot
                 </h2>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid md:grid-cols-2 md:grid-rows-1 grid-rows-2 gap-4">
                     <div className="flex flex-col gap-2 bg-white rounded-xl px-4 py-2">
                         <h4>
                             1. Start a Quantum Readiness Workflow
@@ -46,7 +46,7 @@ const Page1 = () => {
 const Page2 = () => {
     return (
         <div className="relative flex flex-col flex-1 gap-4 self-stretch items-stretch">
-            <div className="relative prose prose-sm prose-teal max-w-none">
+            <div className="relative prose md:prose-sm xs:prose-xs prose-xxs prose-teal max-w-none">
                 <h2>
                     Quantum Readiness Workflow
                 </h2>
@@ -97,7 +97,7 @@ const Page2 = () => {
 const Page3 = () => {
     return (
         <div className="relative flex flex-col flex-1 gap-4 self-stretch items-stretch">
-            <div className="relative prose prose-sm prose-teal max-w-none">
+            <div className="relative prose md:prose-sm xs:prose-xs prose-xxs prose-teal max-w-none">
                 <h2>
                     Give Feedback
                 </h2>
@@ -126,7 +126,7 @@ export function HelpPopup({close}: HelpProps) {
             <div className="flex self-stretch justify-between">
                 {pageIdx > 0 ? (
                     <span
-                        className="top-3 right-4 text-navy text-3xl font-bold cursor-pointer"
+                        className="text-navy xs-text-3xl text-2xl font-bold cursor-pointer"
                         onClick={() => {setPageIdx((prev) => prev - 1)}}
                     >
                         {"<"}
@@ -136,7 +136,7 @@ export function HelpPopup({close}: HelpProps) {
                 )}
                 {pageIdx < pageList.length - 1 ? (
                     <span
-                        className="top-3 right-4 text-navy text-3xl font-bold cursor-pointer"
+                        className="text-navy xs-text-3xl text-2xl font-bold cursor-pointer"
                         onClick={() => {setPageIdx((prev) => prev + 1)}}
                     >
                         {">"}
@@ -145,7 +145,7 @@ export function HelpPopup({close}: HelpProps) {
                     <span className="opacity-0">{">"}</span>
                 )}
             </div>
-            <span className="absolute top-3 right-4 text-navy text-3xl font-bold cursor-pointer" onClick={close}>
+            <span className="absolute x:top-3 top-2 right-4 text-navy xs-text-3xl text-2xl font-bold cursor-pointer" onClick={close}>
                 ×
             </span>
         </div>
