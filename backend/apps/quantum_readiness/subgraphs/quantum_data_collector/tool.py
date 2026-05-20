@@ -46,6 +46,7 @@ class QuantumDataCollectorState(TypedDict, total=False):
     post_collection_stage: int
     company_name_for_report: Optional[str]
     report_save_opt_out: bool
+    transition_feedback: Optional[str]
     step: int
 
 
@@ -251,6 +252,7 @@ Your main objective is always to get more information from the user about the cu
             "post_collection_stage": 0,
             "company_name_for_report": None,
             "report_save_opt_out": False,
+            "transition_feedback": None,
             "step": 1,
         }
 
@@ -277,6 +279,7 @@ Your main objective is always to get more information from the user about the cu
     async def generate_question_node(self, state: SubgraphState) -> SubgraphState:
         prompt_id = state.get("pending_prompt_id") or str(uuid.uuid4())
         state["pending_prompt_id"] = prompt_id
+        transition_feedback = state["stepData"].get("transition_feedback")
         if state["stepData"].get("pending_question") is not None:
             question = state["stepData"]["pending_question"]
         else:
@@ -294,6 +297,7 @@ Your main objective is always to get more information from the user about the cu
                 state["stepData"]["last_question_kind"] = "clarification"
             else:
                 base_question = field_spec["atomic_questions"][question_index].strip()
+                base_question = self._slight_question_variation(state["stepData"], field_key, base_question)
                 section_intro = ""
                 if not state["stepData"]["section_intro_sent"].get(field_key, False):
                     section_intro = field_spec["section_intro"].strip()
@@ -301,6 +305,9 @@ Your main objective is always to get more information from the user about the cu
                 question = f"{section_intro}\n\n{base_question}" if section_intro else base_question
                 state["stepData"]["last_question_kind"] = "main"
 
+            if transition_feedback and state["stepData"].get("last_question_kind") == "main":
+                question = f"{transition_feedback}\n\n{question}"
+                state["stepData"]["transition_feedback"] = None
             question = (question or "").strip()
             state["stepData"]["messages"].append({"role": "assistant", "content": question})
             state["stepData"]["pending_question"] = question
@@ -390,6 +397,9 @@ Your main objective is always to get more information from the user about the cu
                 self._start_post_collection(state["stepData"])
                 state["nextNode"] = "generate_question"
                 return state
+            state["stepData"]["transition_feedback"] = await self._build_transition_feedback(
+                state["stepData"], field_key, next_field
+            )
             state["stepData"]["current_field_key"] = next_field
             state["stepData"]["step"] = step
             state["nextNode"] = "generate_question"
@@ -408,19 +418,19 @@ Your main objective is always to get more information from the user about the cu
             current_question = self._get_current_atomic_question(state["stepData"], field_key)
             question_instance_key = self._question_instance_key(state["stepData"], field_key)
             clarify_count = state["stepData"]["manual_clarify_count_by_question"].get(question_instance_key, 0)
-            if clarify_count >= 1:
-                state["stepData"]["pending_question"] = (
-                    "I already clarified this once. Here is the question again in the simplest form:\n\n"
-                    f"{current_question}"
-                )
-                state["stepData"]["last_question_kind"] = "main"
-                state["nextNode"] = "generate_question"
-                return state
             preset_clarification = self._preset_clarification_for_question(current_question)
             if clarify_count == 0 and preset_clarification:
                 state["stepData"]["pending_question"] = preset_clarification
             else:
-                state["stepData"]["pending_question"] = await self._auto_clarify_question_for_user(current_question)
+                clarified = await self._auto_clarify_question_for_user(current_question)
+                # Keep repeated clarify requests helpful and polite, never scolding.
+                if clarify_count >= 1:
+                    clarified = (
+                        "Of course — happy to clarify.\n\n"
+                        f"{clarified}\n\n"
+                        "If helpful, a short answer is enough."
+                    )
+                state["stepData"]["pending_question"] = clarified
             state["stepData"]["manual_clarify_count_by_question"][question_instance_key] = clarify_count + 1
             state["stepData"]["last_question_kind"] = "main"
             state["nextNode"] = "generate_question"
@@ -561,7 +571,11 @@ Output STRICT JSON with this schema:
         clarification_question = None
         question_instance_key = self._question_instance_key(state["stepData"], current_field)
         clarification_count = state["stepData"]["clarification_count_by_question"].get(question_instance_key, 0)
-        if last_question_kind == "main" and clarification_count < 1:
+        if (
+            last_question_kind == "main"
+            and clarification_count < 1
+            and state["stepData"]["field_status"].get(current_field) != "complete"
+        ):
             should_clarify, clarification_question = await self._clarification_decision(
                 current_question=current_atomic_question,
                 user_answer=state["stepData"]["last_user_answer"],
@@ -587,7 +601,11 @@ Output STRICT JSON with this schema:
             state["stepData"]["field_status"][current_field] = "in_progress"
 
         state["pending_prompt_id"] = None
-        if current_index >= len(field_spec["atomic_questions"]) or state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD:
+        if (
+            state["stepData"]["field_status"].get(current_field) == "complete"
+            or current_index >= len(field_spec["atomic_questions"])
+            or state["stepData"]["iterations_count"][current_field] >= self.MAX_RETRIES_PER_FIELD
+        ):
             state["stepData"]["field_status"][current_field] = "complete"
             next_field, step = self._next_unfilled_key(state["stepData"]["field_status"])
             if next_field is None:
@@ -595,6 +613,9 @@ Output STRICT JSON with this schema:
                 state["nextNode"] = "generate_question"
                 self._log_model_quality_debug(state=state, current_field=current_field)
                 return state
+            state["stepData"]["transition_feedback"] = await self._build_transition_feedback(
+                state["stepData"], current_field, next_field
+            )
             state["stepData"]["current_field_key"] = next_field
             state["stepData"]["step"] = step
             await adispatch_custom_event("tool_progress", {"step": step, "total": self.TOTAL_STEPS})
@@ -705,6 +726,76 @@ Instructions:
         current_idx = stepData.get("current_question_index", {}).get(resolved_field_key, 0)
         max_idx = len(field_spec["atomic_questions"])
         stepData["current_question_index"][resolved_field_key] = min(current_idx + 1, max_idx)
+
+    def _slight_question_variation(self, stepData: QuantumDataCollectorState, field_key: Optional[str], question: str) -> str:
+        base = (question or "").strip()
+        if not base:
+            return base
+        key = field_key or ""
+        seed = (
+            stepData.get("current_question_index", {}).get(key, 0)
+            + stepData.get("iterations_count", {}).get(key, 0)
+            + int(stepData.get("message_count", 0) or 0)
+        ) % 4
+        if seed == 0:
+            return base
+        if seed == 1:
+            return f"Quick check: {base[0].lower() + base[1:]}" if len(base) > 1 else f"Quick check: {base}"
+        if seed == 2:
+            return f"{base} (A short answer is fine.)"
+        return f"Briefly, {base[0].lower() + base[1:]}" if len(base) > 1 else f"Briefly, {base}"
+
+    async def _build_transition_feedback(
+        self,
+        step_data: QuantumDataCollectorState,
+        completed_field: Optional[str],
+        next_field: Optional[str],
+    ) -> str:
+        field_labels = {
+            "a_use_case_identification": "your use cases",
+            "a_technical_infrastructure_baseline": "your technical baseline",
+            "a_strategic_organizational_maturity": "organizational strategy",
+            "a_roadmap_ecosystem": "roadmap and ecosystem",
+        }
+        done = field_labels.get(completed_field or "", "this section")
+        nxt = field_labels.get(next_field or "", "the next section")
+        done_info = self._compact_information_summary(
+            step_data.get("field_information", {}).get(completed_field or "", ""),
+            max_words=22,
+        )
+        prompt = f"""Write one short conversational transition sentence (maximum 16 words).
+
+Context:
+- Completed section: {done}
+- Next section: {nxt}
+- What we captured: {done_info or "enough information collected"}
+
+Rules:
+- Sound natural and friendly.
+- Acknowledge completion briefly.
+- Mention moving to the next section.
+- Exactly one sentence.
+- No markdown.
+"""
+        try:
+            raw = await self._model_gateway.chat(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.VALIDATOR_MODEL,
+                temperature=0.3,
+            )
+            text = " ".join((raw or "").strip().replace("\n", " ").split())
+            text = text.replace("**", "").strip().strip('"')
+            if not text:
+                return f"Great, that gives me enough on {done}. Let us move to {nxt}."
+            if text.count("?") > 1:
+                text = f"{text.split('?', 1)[0].strip()}?"
+            if len(text.split()) > 16:
+                text = " ".join(text.split()[:16]).rstrip(",;:")
+                if not text.endswith("."):
+                    text += "."
+            return text
+        except Exception:
+            return f"Great, that gives me enough on {done}. Let us move to {nxt}."
 
     def _fallback_clarification_question(self, current_question: str) -> str:
         return "Thanks, that helps. Could you add one concrete detail so I can capture this accurately?\n\n" + current_question

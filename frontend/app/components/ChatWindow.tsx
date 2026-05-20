@@ -110,10 +110,10 @@ export function ChatWindow() {
 
   return (
     <div className={`flex relative h-screen flex-col bg-white`}>
-      <header className="sticky top-0 bg-skyblue px-6 py-4 shadow-sm">
+      <header className="sticky top-0 bg-skyblue px-4 py-3 md:px-6 md:py-4 shadow-sm">
         <div className="flex flex-col xs:flex-row-reverse flex-1 xs:justify-between xs:items-center gap-2">
           <div className="flex-1 xs:flex-none flex flex-col items-end gap-1">
-            <span className="font-paragraph text-[10px] text-slate-500 text-right max-w-[220px] truncate">
+            <span className="hidden xs:block font-paragraph text-[11px] md:text-[10px] text-slate-500 text-right max-w-[220px] truncate">
               Session {sessionId}
             </span>
             <div className="flex flex-row items-center gap-2">
@@ -129,15 +129,15 @@ export function ChatWindow() {
                 onClick={() => {
                   setShowFeedbackPopup(true);
                 }}
-                className="h-max rounded-xl bg-navy px-4 md:px-6 py-2 font-paragraph lg:text-md md:text-sm text-xs text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
+                className="h-max rounded-xl bg-navy px-4 md:px-6 py-2.5 md:py-2 font-paragraph lg:text-md md:text-sm text-sm xs:text-xs text-white hover:bg-navy/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
               >
                 Feedback
               </button>
             </div>
           </div>
           <div className="flex flex-col">
-            <div className="flex gap-6 items-center">
-              <h1 className="md:text-3xl text-2xl font-title font-bold text-navy">
+            <div className="flex gap-3 md:gap-6 items-center">
+              <h1 className="md:text-3xl text-xl xs:text-2xl font-title font-bold text-navy leading-tight">
                 Quantum Readiness Chatbot
               </h1>
               <button
@@ -148,13 +148,13 @@ export function ChatWindow() {
                 ?
               </button>
             </div>
-            <p className="mt-1 md:text-sm text-xs text-teal font-paragraph">
+            <p className="mt-1 md:text-sm text-[11px] xs:text-xs text-teal font-paragraph">
               Are you quantum ready? Find out now with a 10-minute conversation.
             </p>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="mt-3 md:mt-4 grid grid-cols-3 gap-2.5 md:gap-2">
           {steps.map((step, index) => {
             const isActive = index === activeStep;
             const isDone = index < activeStep;
@@ -162,7 +162,7 @@ export function ChatWindow() {
             return (
               <div
                 key={step}
-                className={`flex rounded-xl border md:px-3 px-2 py-2 overflow-hidden transition ${
+                className={`flex rounded-xl border md:px-3 px-2.5 py-2.5 md:py-2 overflow-hidden transition ${
                   isActive
                     ? `bg-white border-navy ring-1 ring-navy`
                     : isDone ?
@@ -173,17 +173,17 @@ export function ChatWindow() {
                 <div className="flex flex-col overflow-hidden">
                   <div className="mb-2 flex items-center gap-2 overflow-hidden">
                     <span
-                      className={`inline-flex h-4 w-4 md:h-5 md:w-5 items-center justify-center rounded-full md:text-[11px] text-[9px] font-title font-bold ${
+                      className={`inline-flex h-5 w-5 md:h-5 md:w-5 items-center justify-center rounded-full md:text-[11px] text-[10px] font-title font-bold ${
                         isActive ? `bg-navy text-white` : isDone ? `bg-white text-navy` : "bg-slate-400 text-white"
                       }`}
                     >
                       {index + 1}
                     </span>
-                    <span className={`md:text-[11px] text-[9px] truncate font-paragraph font-semibold ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>
+                    <span className={`md:text-[11px] text-[10px] truncate font-paragraph font-semibold ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>
                       {isActive ? "Active" : isDone ? "Done" : "Pending"}
                     </span>
                   </div>
-                  <p className={`md:text-xs text-[9px] truncate font-paragraph ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>{step}</p>
+                  <p className={`md:text-xs text-[10px] truncate font-paragraph ${isActive ? "text-navy" : isDone ? "text-white" : "text-slate-400"}`}>{step}</p>
                 </div>
                 {workflowStep && (
                   <div className="hidden md:block flex-1">
@@ -209,11 +209,11 @@ export function ChatWindow() {
       </header>
 
       {/* Messages */}
-      <div className="flex-1 space-y-4 overflow-y-auto xs:px-6 px-4 py-5">
+      <div className="flex-1 space-y-4 overflow-y-auto xs:px-6 px-4 py-4 md:py-5">
         {messages.length === 0 && (
           <div className="h-full flex items-center justify-center">
-            <div className="max-w-md rounded-2xl bg-skyblue p-8 text-center shadow-xl">
-              <p className="md:text-2xl text-xl font-title font-bold text-navy">
+            <div className="max-w-md rounded-2xl bg-skyblue p-5 xs:p-6 md:p-8 text-center shadow-xl">
+              <p className="md:text-2xl text-lg xs:text-xl font-title font-bold text-navy">
                 Click below to start a workflow.
               </p>
               <p className="mt-2 font-paragraph md:text-sm text-xs text-teal">
@@ -223,7 +223,7 @@ export function ChatWindow() {
                 type="button"
                 disabled={uiState === "streaming"}
                 onClick={() => send("assessment")}
-                className="mt-6 w-full rounded-xl bg-teal xs:px-6 px-4 py-3 md:text-md xs:text-sm text-xs text-white font-paragraph hover:bg-teal/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
+                className="mt-5 md:mt-6 w-full rounded-xl bg-teal xs:px-6 px-4 py-3 md:text-md xs:text-sm text-sm xs:text-xs text-white font-paragraph hover:bg-teal/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-400"
               >
                 Quantum Readiness Assessment
               </button>
@@ -274,7 +274,7 @@ export function ChatWindow() {
       </div>
 
       {/* Input */}
-      <div className="bg-skyblue md:px-6 md:py-4 px-3 py-2 shadow-sm">
+      <div className="bg-skyblue md:px-6 md:py-4 px-3 py-3 shadow-sm">
         <ChatInput
           onSend={send}
           onDelete={deleteHistory}
