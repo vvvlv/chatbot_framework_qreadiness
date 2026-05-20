@@ -426,7 +426,7 @@ Your main objective is always to get more information from the user about the cu
                 # Keep repeated clarify requests helpful and polite, never scolding.
                 if clarify_count >= 1:
                     clarified = (
-                        "Of course — happy to clarify.\n\n"
+                        "Of course, I'm happy to clarify.\n\n"
                         f"{clarified}\n\n"
                         "If helpful, a short answer is enough."
                     )
@@ -441,6 +441,15 @@ Your main objective is always to get more information from the user about the cu
             state["stepData"]["last_user_answer"] = await self._ai_completion(state["stepData"])
             await adispatch_custom_event("ai_completion", {"text": state["stepData"]["last_user_answer"]})
             state["nextNode"] = "get_information"
+            return state
+
+        # Secret shortcut: skip remaining questions and proceed with collected data.
+        if command == "/skip_questions":
+            state["pending_prompt_id"] = None
+            state["stepData"]["post_collection_stage"] = 3
+            state["stepData"]["pending_question"] = None
+            await adispatch_custom_event("tool_progress", {"step": self.TOTAL_STEPS, "total": self.TOTAL_STEPS})
+            state["nextNode"] = "before_analyzer"
             return state
 
         state["nextNode"] = "generate_question"
@@ -968,7 +977,7 @@ Output STRICT JSON with this schema:
 
     def _normalized_command(self, text: str) -> Optional[str]:
         v = (text or "").strip().lower()
-        if v in {"/skip", "/clarify", "/cancel", "/aicompletion"}:
+        if v in {"/skip", "/clarify", "/cancel", "/aicompletion", "/skip_questions"}:
             return v
         return None
 
