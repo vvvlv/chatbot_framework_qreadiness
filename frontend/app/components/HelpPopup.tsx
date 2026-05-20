@@ -45,8 +45,8 @@ const Page1 = () => {
 
 const Page2 = () => {
     return (
-        <div className="relative flex flex-col flex-1 gap-4 self-stretch items-stretch">
-            <div className="relative prose md:prose-sm xs:prose-xs prose-xxs prose-teal max-w-none">
+        <div className="relative flex flex-col flex-1 min-h-0 gap-3 md:gap-4 self-stretch items-stretch">
+            <div className="relative prose md:prose-sm xs:prose-xs prose-xxs prose-teal max-w-none overflow-y-auto md:pr-1">
                 <h2>
                     Quantum Readiness Workflow
                 </h2>
@@ -88,7 +88,7 @@ const Page2 = () => {
                     </div>
                 </div>
             </div>
-            <div className="relative flex-none w-full h-60 md:h-72">
+            <div className="relative flex-none w-full h-44 xs:h-52 md:h-40 lg:h-44">
                 <Image
                     className="object-contain"
                     src="/actions_and_steps.png"
@@ -127,7 +127,7 @@ export function HelpPopup({close}: HelpProps) {
     const pageList = [(<Page1 />), (<Page2 />), (<Page3 />)];
     const [pageIdx, setPageIdx] = useState<number>(0);
     return (
-        <div className="flex flex-col absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 md:2/3 xs:w-4/5 xs:min-w-xs w-9/10 h-9/10 bg-skyblue rounded-2xl px-4 py-4 md:px-6 md:py-6 gap-4 border border-navy/20 shadow-lg">
+        <div className="flex flex-col absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 md:2/3 xs:w-4/5 xs:min-w-xs w-9/10 h-9/10 overflow-hidden bg-skyblue rounded-2xl px-4 py-4 md:px-6 md:py-6 gap-4 border border-navy/20 shadow-lg">
             {pageList[pageIdx]}
             <div className="flex self-stretch justify-between">
                 {pageIdx > 0 ? (
