@@ -35,6 +35,9 @@ class Feedback(BaseModel):
     title: str
     output: str
 
+class HistoryRequest(BaseModel):
+    session_id: UUID
+
 # TODO : define other models ? What models ?
 #       - a base model for unspecific requests ?
 #       - request for tools (eg RAG tool) ?

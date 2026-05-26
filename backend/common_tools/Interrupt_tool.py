@@ -34,15 +34,19 @@ class InterruptTool(ToolProtocol):
         # TODO ?: maybe add a bool property in args to decide wether to add interrupt messages in the core message file or not
         args : InterruptArg = state["common_tool_input"]["args"]
         answer = interrupt(args)
-        question = args.get("text", None)
-        if question:
-            state["messages"].append(AIMessage(content=question))
+        text = None
+        if isinstance(answer, dict):
+            text = str(answer.get("text", "")).strip()
+        else:
+            text = str(answer)
+        print("answer :", answer)
         if answer and answer != "":
-            state["messages"].append(HumanMessage(content=question))
+            state["messages"].append(HumanMessage(content=text))
         state["nextNode"] = state["common_tool_input"]["nextNode"]
         state["common_tool_output"] = {
             "answer": answer
         }
+        print("[INTERRUPT] DEBUG - messages :", state["messages"])
         return state
 
     def build(self):

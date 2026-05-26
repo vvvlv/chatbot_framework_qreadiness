@@ -1,5 +1,6 @@
 """Chat route with SSE streaming and interrupt/resume support."""
 import hashlib
+import uuid
 import os
 import time
 from collections import defaultdict, deque
@@ -11,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from api.models import ChatRequest
+from api.models import ChatRequest, HistoryRequest
 from api.streaming import stream_graph_events
 from core.usage_context import clear_usage_context, set_usage_context
 
@@ -241,6 +242,33 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/getHistory")
+async def get_history(req: HistoryRequest, request: Request) -> list[Dict]:
+    # TODO : stop ongoing AI answer
+    session_id = str(req.session_id)
+    config = {"configurable": {"thread_id": session_id}}
+    graph = request.app.state.graph
+    state = await graph.aget_state(config, subgraphs=True)
+    if state and hasattr(state, "tasks") and len(state.tasks) > 0:
+        state = state.tasks[0].state
+    if state and hasattr(state, "tasks") and len(state.tasks) > 0:
+        state = state.tasks[0].state
+    values = {}
+    if state and hasattr(state, "values"):
+        values = state.values
+    messages = values.get("messages") or []
+    print("[GET HISTORY] messages :", messages)
+
+    # Convert BaseMessages to message type of frontend
+    formatted_messages = map(lambda msg: {
+        "id": uuid.uuid4(),
+        "role": "user" if hasattr(msg, "type") and msg.type == "human" else "assistant",
+        "content": msg.content if hasattr(msg, "content") else str(msg),
+        "date": time.time()
+    }, messages)
+    return list(formatted_messages)
 
 
 @router.get("/debug/usage")

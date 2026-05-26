@@ -5,13 +5,13 @@
  */
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent, Feedback } from '../types';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 console.log("API_URL :", API_URL || "(same-origin /api)");
 
-export function useChat(sessionId: string, setSessionId: (value: string) => void, userId: string) {
+export function useChat(sessionId: string, setSessionId: (value: string) => void, userId: string, isNew: boolean) {
   const [uiState, setUIState] = useState<UIState>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
   const [toolMeta, setToolMeta] = useState<ToolMeta | null>(null);
@@ -23,6 +23,42 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
   const responseBufferRef = useRef<string>("");
   const seenQuestionPromptIdsRef = useRef<Set<string>>(new Set());
   const lastQuestionTextRef = useRef<string | null>(null);
+
+  // Init : get messages from backend
+  useEffect(() => {
+    let cancelled = false;
+    if (!isNew) {
+      const load = async () => {
+        try {
+          const endpoint = API_URL ? `${API_URL}/api/getHistory` : "/api/getHistory";
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              session_id: sessionId,
+            }),
+          });
+          if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, error: ${error}`);
+          }
+          else {
+            const messages = await response.json();
+            if (!cancelled) setMessages(messages);
+            console.log("getHistory :", response);
+            console.log("messages : ", messages);
+          }
+        } catch (error: any) {
+          if (!cancelled) setError(error.message || "Failed to get history");
+          if (!cancelled) setUIState("error");
+        }
+      }
+      load();
+    }
+    return () => { cancelled = true; };
+  }, [sessionId]);
 
   const handleEvent = useCallback((event: SSEEvent) => {
     console.log("event received :", event.type);

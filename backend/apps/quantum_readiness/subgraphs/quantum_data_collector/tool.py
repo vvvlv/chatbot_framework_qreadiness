@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langgraph.graph import END, START, StateGraph
+from langchain_core.messages import HumanMessage, AIMessage
 
 from core.model_gateway import ModelGateway
 from core.protocols import SubgraphProtocol, ToolProtocol
@@ -324,6 +325,7 @@ Your main objective is always to get more information from the user about the cu
                 "can_skip": True,
             },
         }
+        state["messages"].append(AIMessage(content=question))
         state["nextNode"] = "interrupt"
         return state
 
@@ -416,13 +418,17 @@ Your main objective is always to get more information from the user about the cu
                 return state
 
             current_question = self._get_current_atomic_question(state["stepData"], field_key)
+            if state["stepData"]["last_question_kind"] == "clarification":
+                latest_assistant_question = self._latest_assistant_question(state["stepData"].get("messages", []))
+            else:
+                latest_assistant_question = current_question
             question_instance_key = self._question_instance_key(state["stepData"], field_key)
             clarify_count = state["stepData"]["manual_clarify_count_by_question"].get(question_instance_key, 0)
-            preset_clarification = self._preset_clarification_for_question(current_question)
+            preset_clarification = self._preset_clarification_for_question(latest_assistant_question)
             if clarify_count == 0 and preset_clarification:
                 state["stepData"]["pending_question"] = preset_clarification
             else:
-                clarified = await self._auto_clarify_question_for_user(current_question)
+                clarified = await self._auto_clarify_question_for_user(latest_assistant_question)
                 # Keep repeated clarify requests helpful and polite, never scolding.
                 if clarify_count >= 1:
                     clarified = (
@@ -432,13 +438,13 @@ Your main objective is always to get more information from the user about the cu
                     )
                 state["stepData"]["pending_question"] = clarified
             state["stepData"]["manual_clarify_count_by_question"][question_instance_key] = clarify_count + 1
-            state["stepData"]["last_question_kind"] = "main"
             state["nextNode"] = "generate_question"
             return state
 
         if command == "/aicompletion":
             state["pending_prompt_id"] = None
             state["stepData"]["last_user_answer"] = await self._ai_completion(state["stepData"])
+            state["messages"].append(HumanMessage(content=state["stepData"]["last_user_answer"]))
             await adispatch_custom_event("ai_completion", {"text": state["stepData"]["last_user_answer"]})
             state["nextNode"] = "get_information"
             return state

@@ -15,11 +15,14 @@ export function ChatWindow() {
     );
   };
   
+  let isNew = true;
+
   let initSessionId : string = crypto.randomUUID();
   if (typeof window !== 'undefined') {
     const stored = localStorage.getItem('session_id');
     if (stored && isUuid(stored)) {
       initSessionId = stored;
+      isNew = false;
     }
     else {
       localStorage.setItem('session_id', initSessionId);
@@ -50,7 +53,7 @@ export function ChatWindow() {
     send,
     deleteHistory,
     sendFeedback,
-  } = useChat(sessionId, setSessionId, userId);
+  } = useChat(sessionId, setSessionId, userId, isNew);
 
   const steps = [
     "Welcome",
