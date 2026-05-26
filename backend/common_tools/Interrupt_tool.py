@@ -40,8 +40,6 @@ class InterruptTool(ToolProtocol):
         else:
             text = str(answer)
         print("answer :", answer)
-        if answer and answer != "":
-            state["messages"].append(HumanMessage(content=text))
         state["nextNode"] = state["common_tool_input"]["nextNode"]
         state["common_tool_output"] = {
             "answer": answer
