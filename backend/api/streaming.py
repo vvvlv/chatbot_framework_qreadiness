@@ -15,6 +15,7 @@ According to app_definition.md Section 7, all events follow a typed envelope:
 }
 """
 import json
+import asyncio
 import traceback
 from typing import Any, AsyncIterator, Dict, Optional
 
@@ -43,6 +44,7 @@ async def stream_graph_events(
     input_,
     config: Dict,
     user_id: str,
+    queue: asyncio.Queue,
     interaction_logger=None,
 ) -> AsyncIterator[str]:
     """
@@ -101,7 +103,7 @@ async def stream_graph_events(
         return current_meta
 
     # Emit session_state event first
-    yield _sse("session_state", {}, await _refresh_meta())
+    await queue.put(_sse("session_state", {}, await _refresh_meta()))
     print(f"[SSE_STREAM] Emitted session_state event")
     
     # Stream graph execution events
@@ -121,7 +123,7 @@ async def stream_graph_events(
                 if chunk and hasattr(chunk, "content"):
                     token = chunk.content
                     if token:
-                        yield _sse("text_delta", {"token": token}, await _refresh_meta())
+                        await queue.put(_sse("text_delta", {"token": token}, await _refresh_meta()))
             
             elif kind == "on_custom_event":
                 # Custom events from tools/subgraphs
@@ -129,7 +131,7 @@ async def stream_graph_events(
                 data = event.get("data", {})
                 meta = await _refresh_meta()
                 type_, payload, meta = await eventSelector(name, data, meta, _log_event)
-                yield _sse(type_, payload, meta)
+                await queue.put(_sse(type_, payload, meta))
             
             elif kind == "on_chain_error":
                 # Error handling
@@ -140,10 +142,10 @@ async def stream_graph_events(
                     "chain_error",
                     payload={"message": error_msg},
                 )
-                yield _sse("error", {
+                await queue.put(_sse("error", {
                     "message": error_msg,
                     "recoverable": False,
-                }, await _refresh_meta())
+                }, await _refresh_meta()))
             
             elif kind == "on_chain_start":
                 # begining of a node/subgraph
@@ -172,10 +174,10 @@ async def stream_graph_events(
         print(f"[SSE_STREAM] ✗ Streaming error: {e}")
         await _log_event("stream_error", payload={"message": str(e)})
         traceback.print_exc()
-        yield _sse("error", {
+        await queue.put(_sse("error", {
             "message": str(e),
             "recoverable": False,
-        }, await _refresh_meta())
+        }, await _refresh_meta()))
     
     # Emit final event based on whether run completed or suspended on interrupt().
     try:
@@ -196,11 +198,11 @@ async def stream_graph_events(
                 interrupt_values.get("event_name", "interrupt"),
                 payload=interrupt_values,
             )
-            yield _sse(
+            await queue.put(_sse(
                 interrupt_values.get("event_name", "interrupt"),
                 interrupt_values,
                 meta,
-            )
+            ))
 
         else:
             final_output: Optional[str] = None
@@ -250,13 +252,14 @@ async def stream_graph_events(
                     "stream_output_complete",
                     payload={"output_length": len(final_output)},
                 )
-                yield _sse("text_done", {"full_text": final_output}, await _refresh_meta())
+                await queue.put(_sse("text_done", {"full_text": final_output}, await _refresh_meta()))
             else:
                 print("[SSE_STREAM] No final output found to emit as text_done")
     except Exception as e:
         print(f"[SSE_STREAM] ⚠ Could not emit final SSE event from state: {e}")
 
     print(f"[SSE_STREAM] Stream complete - processed {event_count} events")
+    await queue.put(None)
     await _log_event("stream_complete", payload={"event_count": event_count})
 
 

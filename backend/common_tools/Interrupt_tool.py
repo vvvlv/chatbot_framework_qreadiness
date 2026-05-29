@@ -44,7 +44,7 @@ class InterruptTool(ToolProtocol):
         state["common_tool_output"] = {
             "answer": answer
         }
-        print("[INTERRUPT] DEBUG - messages :", state["messages"])
+        state["messages"].append(HumanMessage(content=answer["text"]))
         return state
 
     def build(self):

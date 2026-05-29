@@ -6,6 +6,7 @@ Subgraphs are instantiated, injected with their dependencies, and registered
 into the core graph in one place.
 """
 import os
+import asyncio
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -94,6 +95,10 @@ async def startup():
         model_gateway=model_gateway,
         checkpointer=checkpointer,
     )
+
+    # event queue for streaming
+    active_queues: dict[str, asyncio.Queue] = {}
+    app.state.active_queues = active_queues
     
     app.state.interaction_logger = InteractionLogger()
     app.state.usage_tracker = usage_tracker

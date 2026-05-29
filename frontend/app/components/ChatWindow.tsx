@@ -87,13 +87,7 @@ export function ChatWindow() {
 
   const showSubSteps = (toolMeta ? toolMeta.name === "quantum_data_collector" : false);
 
-  const showProcessingIndicator =
-    uiState === "awaiting_assistant" || (
-      Boolean(toolMeta) &&
-      uiState === "tool_active" &&
-      !currentQuestion &&
-      !currentResponse
-    );
+  const showProcessingIndicator = uiState === "awaiting_assistant";
 
   const processingText = (() => {
     if (!toolMeta) return "Processing answer...";

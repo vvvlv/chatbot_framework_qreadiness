@@ -3,6 +3,8 @@ import hashlib
 import uuid
 import os
 import time
+import asyncio
+import json
 from collections import defaultdict, deque
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -104,6 +106,16 @@ def _enforce_rate_limit(bucket_key: str) -> None:
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
     queue.append(now)
 
+def _node_name_to_class_name(node_name: str) -> str:
+    if node_name == "data_collector":
+        return "quantum_data_collector"
+    elif node_name == "analyzer":
+        return "quantum_analyzer"
+    elif node_name == "presenter":
+        return "quantum_presenter"
+    else:
+        return None
+
 
 @router.post("/chat")
 async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
@@ -114,6 +126,8 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
     set_usage_context(session_id=session_id, user_id=user_id)
     _enforce_rate_limit(_client_key(request, user_id))
     config = {"configurable": {"thread_id": session_id}}
+    queue = asyncio.Queue()
+    request.app.state.active_queues[session_id] = queue
 
     # Get graph from app state (set at startup)
     graph = request.app.state.graph
@@ -152,17 +166,6 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             payload={"command": "/cancel"},
         )
         input_ = Command(resume={"text": "/cancel", "prompt_id": req.prompt_id})
-        return StreamingResponse(
-            stream_graph_events(
-                graph,
-                input_,
-                config,
-                user_id,
-                interaction_logger=interaction_logger,
-            ),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
 
     # Determine input based on suspension state
     if is_suspended:
@@ -224,21 +227,29 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             "session_id": session_id,
         }
 
-    async def _stream_with_usage_context():
+    asyncio.create_task(
+        stream_graph_events(
+            graph,
+            input_,
+            config,
+            user_id,
+            queue,
+            interaction_logger=interaction_logger,
+        )
+    )
+
+    async def generator():
         try:
-            async for event in stream_graph_events(
-                graph,
-                input_,
-                config,
-                user_id,
-                interaction_logger=interaction_logger,
-            ):
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
                 yield event
         finally:
             clear_usage_context()
-
+    
     return StreamingResponse(
-        _stream_with_usage_context(),
+        generator(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -246,29 +257,76 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
 
 @router.post("/getHistory")
 async def get_history(req: HistoryRequest, request: Request) -> list[Dict]:
-    # TODO : stop ongoing AI answer
     session_id = str(req.session_id)
     config = {"configurable": {"thread_id": session_id}}
+    queue = request.app.state.active_queues.get(session_id)
     graph = request.app.state.graph
     state = await graph.aget_state(config, subgraphs=True)
+    current_subgraph = None
+    is_graph_running = True
     if state and hasattr(state, "tasks") and len(state.tasks) > 0:
         state = state.tasks[0].state
     if state and hasattr(state, "tasks") and len(state.tasks) > 0:
+        current_subgraph = state.tasks[0].name
+        state = state.tasks[0].state
+    if state and hasattr(state, "tasks") and len(state.tasks) > 0 and state.tasks[0].name == "interrupt":
+        is_graph_running = False
         state = state.tasks[0].state
     values = {}
     if state and hasattr(state, "values"):
         values = state.values
     messages = values.get("messages") or []
+    stepData = values.get("stepData") or {}
+    step = stepData.get("step") or 0
+    field_status = stepData.get("field_status") or {}
+    prompt_id = values.get("pending_prompt_id") or None
+    total = len(field_status.keys())
     print("[GET HISTORY] messages :", messages)
+    print("[GET_HISTORY] current_node :", current_subgraph)
 
     # Convert BaseMessages to message type of frontend
     formatted_messages = map(lambda msg: {
-        "id": uuid.uuid4(),
+        "id": str(uuid.uuid4()),
         "role": "user" if hasattr(msg, "type") and msg.type == "human" else "assistant",
         "content": msg.content if hasattr(msg, "content") else str(msg),
         "date": time.time()
     }, messages)
-    return list(formatted_messages)
+    message_event = {
+        "type": "get_history",
+        "payload": {
+            "messages": list(formatted_messages),
+        },
+        "meta": {},
+    }
+    tool_meta_event = {
+        "type": "get_tool_meta",
+        "payload": {
+            "name": _node_name_to_class_name(current_subgraph),
+            "step": step,
+            "total": total,
+            "is_graph_running": is_graph_running,
+            "prompt_id": prompt_id,
+        },
+        "meta": {},
+    }
+
+    async def generator(messages, toolMeta):
+        try:
+            yield f"data: {json.dumps(messages)}\n\n"
+            yield f"data: {json.dumps(toolMeta)}\n\n"
+            while True and queue is not None:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield event
+        finally:
+            clear_usage_context()
+    
+    return StreamingResponse(
+        generator(message_event, tool_meta_event),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/debug/usage")

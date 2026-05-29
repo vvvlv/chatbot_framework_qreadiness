@@ -325,8 +325,6 @@ Your main objective is always to get more information from the user about the cu
                 "can_skip": True,
             },
         }
-        if state["stepData"]["last_user_answer"] is not None:
-            state["messages"].append(HumanMessage(content=state["stepData"]["last_user_answer"]))
         state["messages"].append(AIMessage(content=question))
         state["nextNode"] = "interrupt"
         return state
@@ -446,6 +444,7 @@ Your main objective is always to get more information from the user about the cu
         if command == "/aicompletion":
             state["pending_prompt_id"] = None
             state["stepData"]["last_user_answer"] = await self._ai_completion(state["stepData"])
+            state["messages"].append(HumanMessage(content=state["stepData"]["last_user_answer"]))
             await adispatch_custom_event("ai_completion", {"text": state["stepData"]["last_user_answer"]})
             state["nextNode"] = "get_information"
             return state
@@ -640,7 +639,6 @@ Output STRICT JSON with this schema:
         return state
 
     async def before_analyzer_node(self, state: SubgraphState) -> SubgraphState:
-        state["messages"].append(HumanMessage(content=state["stepData"]["last_user_answer"]))
         collected = state["stepData"].get("field_information", {})
         branch_a_topics = await self._build_branch_a_topics(collected)
 

@@ -44,11 +44,32 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
             const error = await response.text();
             throw new Error(`HTTP error! status: ${response.status}, error: ${error}`);
           }
-          else {
-            const messages = await response.json();
-            if (!cancelled) setMessages(messages);
-            console.log("getHistory :", response);
-            console.log("messages : ", messages);
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error("No response body");
+          }
+
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              
+              try {
+                const event: SSEEvent = JSON.parse(line.slice(6));
+                handleEvent(event);
+              } catch (e) {
+                console.error("Error parsing SSE event:", e, line);
+              }
+            }
           }
         } catch (error: any) {
           if (!cancelled) setError(error.message || "Failed to get history");
@@ -98,7 +119,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
         break;
 
       case "tool_start":
-        setUIState("tool_active");
+        setUIState("awaiting_assistant");
         seenQuestionPromptIdsRef.current.clear();
         lastQuestionTextRef.current = null;
         setToolMeta({
@@ -171,6 +192,39 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, userMessage]);
+        break;
+      
+      case "get_history":
+        setMessages(event.payload.messages);
+        break;
+      
+      case "get_tool_meta":
+        const current_tool = event.payload.name;
+        console.log("current_tool :", current_tool);
+        if (current_tool === "quantum_data_collector" || current_tool === "quantum_analyzer" || current_tool === "quantum_presenter") {
+          if (event.payload.is_graph_running) {
+            setUIState("awaiting_assistant");
+            setLockChatInput(true);
+          }
+          else {
+            setUIState("tool_active");
+            setLockChatInput(false);
+            const text = messages.length > 0 ? messages[messages.length - 1].content : "";
+            setCurrentQuestion({
+              text: text,
+              prompt_id: event.payload.prompt_id || undefined,
+              input_type: "free_text",
+              options: [],
+              min: undefined,
+              max: undefined,
+            });
+          }
+          setToolMeta({
+            name: event.payload.name || "unknown",
+            total: event.payload.total || 0,
+            step: event.payload.step || 1,
+          });
+        }
         break;
 
       case "error":
@@ -304,6 +358,8 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
       localStorage.setItem('session_id', newSessionId);
     }
     setSessionId(newSessionId);
+
+    // TODO : send message to backend to stop graph execution
   }, []);
 
   const sendFeedback = useCallback(async (feedbacks: Feedback[]) => {

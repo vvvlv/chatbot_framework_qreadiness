@@ -307,10 +307,11 @@ Provide specific timeline recommendations based on the benchmarks."""
         #     unknowns_text += f"  ⚠️ You were unsure about {item["section"]} - {item["dimension"]}\n"
         
         report = f"""
-────────────────────────────────────────────  
+--- 
 **QUANTUM READINESS REPORT**  
 Company: {company} | Sector: {industry} | Date: {today}  
-────────────────────────────────────────────
+
+---
 
 1. **SCORES AT A GLANCE**  
     - Branch A (Quantum Competitiveness):     {branch_a_score:.0f} / 100  📈 {branch_a_band}
@@ -332,7 +333,7 @@ Company: {company} | Sector: {industry} | Date: {today}
    If you want a practical action plan, the Roadmap Chatbot can translate these priorities into concrete next steps and timeline options.
 """
         
-        report += "  \n────────────────────────────────────────────\n"
+        report += "  \n---\n"
         
         return report
 
