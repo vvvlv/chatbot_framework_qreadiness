@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: 'Getting started'
+# Optionally set API keys here instead of exporting environment variables.
+# Never commit real keys to source control.
+prompts:
+  - file://prompt_data_collector.py:create_prompt_build_transition_feedback
+
+providers:
+  - id: openai:claude-sonnet-4-6
+    config:
+      apiBaseUrl: "{{ env.LITELLM_BASE_URL }}"
+      apiKey: "{{ env.LITELLM_API_KEY }}"
+      temperature: 0.3
+  - id: openai:gpt-4o
+    config:
+      apiBaseUrl: "{{ env.LITELLM_BASE_URL }}"
+      apiKey: "{{ env.LITELLM_API_KEY }}"
+      temperature: 0.3
+  - id: openai:claude-haiku-4-5
+    config:
+      apiBaseUrl: "{{ env.LITELLM_BASE_URL }}"
+      apiKey: "{{ env.LITELLM_API_KEY }}"
+      temperature: 0.3
+
+tests:
+  - vars:
+      done: 'your use cases'
+      nxt: 'your technical baseline'
+      done_info: 'Industry: Healthcare. Primary computationally intensive business problem: drug discovery simulations, specifically molecular docking. This represents an intrinsic quantum use case with significant classical computational bottlenecks, making it highly relevant for quantum computing assessment.'
+  # add more...
