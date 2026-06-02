@@ -1,7 +1,6 @@
 # Tests for field transition in data_collector
 
 This is a first draft of a unit test for a single prompt.
-It's not automated yet.
 
 ## Prerequisite
 
@@ -54,7 +53,7 @@ Add as much test cases as you want in the section `tests` of `promptfooconfig.ya
 1. Go to the directory containing your promptfooconfig.yaml
 
 ```bash
-cd ./backend/test_data_collector_transition
+cd ./backend/single_promptfoo_tests
 ```
 
 2. Run the evaluation:

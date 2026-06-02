@@ -5,7 +5,8 @@ Quantum Readiness Data Collection Tool - Layer 3.
 import json
 import os
 import uuid
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict, Callable
+from types import GenericAlias
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langgraph.graph import END, START, StateGraph
@@ -15,6 +16,7 @@ from core.model_gateway import ModelGateway
 from core.protocols import SubgraphProtocol, ToolProtocol
 from core.state import SubgraphState
 
+from promptfoo_tests.shared_state import register
 
 class FieldSpec(TypedDict):
     key: str
@@ -23,7 +25,6 @@ class FieldSpec(TypedDict):
     atomic_questions: List[str]
     answer_criteria: str
     example_answers: List[str]
-
 
 class QuantumDataCollectorState(TypedDict, total=False):
     messages: list[Dict]
@@ -52,7 +53,13 @@ class QuantumDataCollectorState(TypedDict, total=False):
 
 
 class QuantumDataCollectorTool(SubgraphProtocol):
+
+######################################
+##       Class Attributes           ##
+######################################
+
     name = "quantum_data_collector"
+
     VALIDATOR_MODEL = os.getenv(
         "VALIDATOR_MODEL",
         os.getenv("LITELLM_DEFAULT_MODEL") or os.getenv("LLM_MODEL", "claude-haiku-4-5"),
@@ -151,7 +158,27 @@ class QuantumDataCollectorTool(SubgraphProtocol):
         },
     }
 
-    SYSTEM_PROMPT = f"""
+    TOTAL_STEPS = 4
+
+    MAX_RETRIES_PER_FIELD = 5
+
+    FINAL_COMPANY_NAME_QUESTION = (
+        "Before I generate your report, would you like to provide a company name to display in it? "
+        "If yes, type the exact name. If not, type 'skip'."
+    )
+
+    FINAL_REPORT_SAVE_OPT_OUT_QUESTION = (
+        "Final privacy preference: do you want to opt out of saving this final report in our database? "
+        "Please answer yes (opt out) or no (allow saving)."
+    )
+
+######################################
+##       Prompt Generation          ##
+######################################
+
+    @classmethod
+    def _system_prompt(cls) -> str:
+        return f"""
 SYSTEM PROMPT : 
 You are a professional quantum assistant that helps managers to assess the quantum readiness of their company/structure.
 Your first step is to gather the information necessary for this assessment.
@@ -165,21 +192,224 @@ More precisely, your goal is to identify the user's information according to 4 f
 
 Here are the 4 fields :
 
-{json.dumps(FIELD_SPECS)}
+{json.dumps(cls.FIELD_SPECS)}
 
 I will update you on the information status for each field after every user message, and tell you what is the current field to focus on.
 Your main objective is always to get more information from the user about the current field, but you can help them to better understand technical terms if they need.
+        """
+
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    def _prompt_task1(
+        cls,
+        information_status: str,
+        current_field: str,
+        current_atomic_question: str,
+        last_question_kind: str,
+        last_ai_messages: str,
+        last_user_answer: str,
+    ) -> list[Dict]:
+        prompt = f"""
+Your task now is to extract relevant information from the user answer in order to fill the 4 quantum readiness fields described in your system prompt.
+
+Here is a summary of the information already extracted for each field :
+
+{information_status}
+
+The field currently being discussed in the conversation is : {current_field}
+The concrete question asked to the user was : {current_atomic_question}
+The question type was : {last_question_kind}
+Your last message was : {last_ai_messages}
+The user answered : {last_user_answer}
+
+Extract relevant information for the current field from the user answer, based on the current field attributes and this specific question: {current_atomic_question}
+Treat short direct answers like "yes", "no", or "not yet" as relevant information when they clearly answer the question.
+If there is no relevant information, just return 'no information'.
+Do not include markdown, code fences, or extra keys.
 """
-    TOTAL_STEPS = 4
-    MAX_RETRIES_PER_FIELD = 5
-    FINAL_COMPANY_NAME_QUESTION = (
-        "Before I generate your report, would you like to provide a company name to display in it? "
-        "If yes, type the exact name. If not, type 'skip'."
-    )
-    FINAL_REPORT_SAVE_OPT_OUT_QUESTION = (
-        "Final privacy preference: do you want to opt out of saving this final report in our database? "
-        "Please answer yes (opt out) or no (allow saving)."
-    )
+        return [
+            {"role": "user", "content": cls._system_prompt()},
+            {"role": "user", "content": prompt},
+        ]
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    def _prompt_task2(cls, text: str, current_field: str, step_messages: list[Dict[str, str]]) -> list[Dict]:
+        prompt = f"""Merge the information you found ({text}) with the already extracted information of the current field ({current_field}) into a single text summary.
+Return a concise non-redundant summary (maximum 90 words).
+Do not include markdown, code fences, or extra keys.
+"""
+        return step_messages + [{"role": "user", "content": prompt}]
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.1})
+    def _prompt_task3(cls, step_messages: list[Dict[str, str]]) -> list[Dict]:
+        output = {"type": "object", "properties": {"status": {"type": "string", "enum": ["empty", "in_progress", "complete"]}}}
+        prompt = f"""Based on the new information summary for the current field and the answer criteria of the current field,
+indicate wether the current field is 'empty' (no user information extracted for this field), 'in_progress' (some user information but not enough) or 'complete' (there is enough user information for this field).
+Output STRICT JSON with this schema:
+{output}
+"""
+        return step_messages + [{"role": "user", "content": prompt}]
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    def _prompt_task4(cls, step_messages: list[Dict[str, str]]) -> list[Dict]:
+        output = {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string"},
+                            "new_information_summary": {"type": "string"},
+                            "new_status": {"type": "string", "enum": ["empty", "in_progress", "complete"]},
+                        },
+                        "required": ["key", "new_information_summary", "new_status"],
+                    },
+                }
+            },
+            "required": ["list"],
+        }
+        prompt = f"""Based on the fields specifications, determine if the user answer contains relevant information for some fields other than the current field.
+Update the information summary of the concerned fields with the user answer.
+Compare the new information summary of the concerned fields with their answer criteria. For each field, if there is enough information, set the field status to "complete". If there is not enough information and the field was "empty", set the field status to "in_progress"
+Return the list of the concerned fields, with their key, their new information summary and their new status.
+Output STRICT JSON with this schema:
+{output}
+"""
+        return step_messages + [{"role": "user", "content": prompt}]
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.1})
+    def _prompt_extract_rubric(
+        cls,
+        field_key: str,
+        field_summary: str,
+        rubric_defs: Dict[str, str],
+    ) -> str:
+        output_format = {
+            "type": "object",
+            "properties": {rubric: {"type": "string"} for rubric in rubric_defs.keys()},
+            "required": list(rubric_defs.keys()),
+        }
+        prompt = f"""You are mapping a collected field summary into rubric-specific summaries.
+
+Field key: {field_key}
+Field summary: {field_summary}
+
+Rubric definitions:
+{json.dumps(rubric_defs)}
+
+Instructions:
+- For each rubric, return a concise summary strictly based on the field summary.
+- If there is no evidence for a rubric, return an empty string for that rubric.
+- Do not invent facts.
+- Output STRICT JSON with this schema:
+{json.dumps(output_format)}
+"""
+        return prompt
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.3})
+    def _prompt_transition_feedback(cls, done: str, nxt: str, done_info: str) -> str:
+        prompt = f"""Write one short conversational transition sentence (maximum 16 words).
+
+Context:
+- Completed section: {done}
+- Next section: {nxt}
+- What we captured: {done_info or "enough information collected"}
+
+Rules:
+- Sound natural and friendly.
+- Acknowledge completion briefly.
+- Mention moving to the next section.
+- Exactly one sentence.
+- No markdown.
+"""
+        return prompt
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.0})
+    def _prompt_extract_company_name(cls, raw_answer: str, user_context: str) -> str:
+        prompt = f"""Decide whether the user answer contains a company name for report display.
+
+User answer: {raw_answer}
+Known context: {user_context}
+
+Return STRICT JSON:
+{{
+  "company_name": "<name or unknown>",
+  "is_valid_company_name": true/false
+}}
+
+Rules:
+- If answer is refusal, preference, explanation, or sentence not giving a company name, set unknown/false.
+- If a company name is present, extract only the name.
+- No markdown.
+"""
+        return prompt
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    def _prompt_auto_clarify(cls, q: str) -> str:
+        prompt = f"""Rephrase the following question to make it easier to understand.
+Original question: {q}
+
+Rules:
+- Keep the same intent.
+- Make it concrete and user-friendly.
+- Use plain language.
+- Keep it to one sentence.
+- No markdown, no bullet points, no extra text.
+"""
+        return prompt
+
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.1})
+    def _prompt_clarification_decision(cls, current_question: str, user_answer: str, extracted_information: str) -> str:
+        output_format = {
+            "type": "object",
+            "properties": {"needs_clarification": {"type": "boolean"}, "clarification_question": {"type": "string"}},
+            "required": ["needs_clarification", "clarification_question"],
+        }
+        prompt = f"""You are evaluating if a single follow-up clarification question is needed.
+Current question: {current_question}
+User answer: {user_answer or "no answer"}
+Extracted information: {extracted_information or "no information"}
+
+Rules:
+- Ask for clarification only if the answer is too vague, contradictory, or missing key detail.
+- At most one follow-up question should be asked.
+- The clarification question must be concise and concrete.
+- Return plain text in the clarification question with no markdown.
+
+Output STRICT JSON with this schema:
+{output_format}
+"""
+        return prompt
+    
+    @classmethod
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    def _prompt_ai_completion(cls, field_description: str, field_information: Dict[str, str], ai_question: str) -> str:
+        prompt = f"""You want to assess the quantum readiness of your company, so you asked an assistant to provide you a detailed report on the quantum readiness of your company.
+In order to generate a reliable report, this assistant needs your information regarding 4 fields : 
+{field_description}
+You already provided the following information :
+{field_information}
+
+Now, the assistant asked you the following question : {ai_question}
+Invent a response consistent with the information already given.
+Respond with exactly one short sentence (maximum 25 words).
+Do not include markdown, code fences, lists, or extra keys.
+"""
+        return prompt
+
+######################################
+##          Tool Structure          ##
+######################################
 
     def __init__(self, model_gateway: ModelGateway, interrupt_tool: ToolProtocol):
         self._model_gateway = model_gateway
@@ -220,9 +450,9 @@ Your main objective is always to get more information from the user about the cu
         g.add_edge("before_analyzer", END)
         return g.compile()
 
-    async def router(self, state: SubgraphState) -> str:
-        print("[ROUTER]: debug nextNode : ", state.get("nextNode"))
-        return state.get("nextNode")
+######################################
+##             Nodes                ##
+######################################
 
     async def init_node(self, state: SubgraphState) -> SubgraphState:
         last_5_messages = []
@@ -270,7 +500,7 @@ Your main objective is always to get more information from the user about the cu
             {
                 "tool_name": self.name,
                 "total_steps": self.TOTAL_STEPS,
-                "system_prompt": self.SYSTEM_PROMPT,
+                "system_prompt": self._system_prompt(),
                 "skip_command": "/skip",
                 "clarify_command": "/clarify",
             },
@@ -471,31 +701,14 @@ Your main objective is always to get more information from the user about the cu
         current_field = state["stepData"]["current_field_key"]
         current_atomic_question = self._get_current_atomic_question(state["stepData"], current_field)
         last_question_kind = state["stepData"].get("last_question_kind", "main")
-        information_status = self._write_information_status(state["stepData"])
-        main_prompt = f"""
-Your task now is to extract relevant information from the user answer in order to fill the 4 quantum readiness fields described in your system prompt.
-
-Here is a summary of the information already extracted for each field :
-
-{information_status}
-
-The field currently being discussed in the conversation is : {current_field}
-The concrete question asked to the user was : {current_atomic_question}
-The question type was : {last_question_kind}
-Your last message was : {state['stepData']['messages'][-1]["content"]}
-The user answered : {state['stepData']['last_user_answer']}
-"""
-
-        task1_prompt = f"""Extract relevant information for the current field from the user answer, based on the current field attributes and this specific question: {current_atomic_question}
-Treat short direct answers like "yes", "no", or "not yet" as relevant information when they clearly answer the question.
-If there is no relevant information, just return 'no information'.
-Do not include markdown, code fences, or extra keys.
-"""
-        step_messages = [
-            {"role": "user", "content": self.SYSTEM_PROMPT},
-            {"role": "user", "content": main_prompt},
-            {"role": "user", "content": task1_prompt},
-        ]
+        step_messages = self._prompt_task1(
+            information_status=self._write_information_status(state["stepData"]),
+            current_field=current_field,
+            current_atomic_question=current_atomic_question,
+            last_question_kind=last_question_kind,
+            last_ai_message=state['stepData']['messages'][-1]["content"],
+            last_user_answer=state['stepData']['last_user_answer'],
+        )
         raw = await self._model_gateway.chat(messages=step_messages, model=self.VALIDATOR_MODEL, temperature=0.2)
         text = (raw or "").strip()
         if self._is_no_information(text):
@@ -504,23 +717,19 @@ Do not include markdown, code fences, or extra keys.
                 text = short_answer_info
         print(f"[DATA_COLLECTOR] DEBUG - Output task 1 : {text}")
 
-        task2_prompt = f"""Merge the information you found ({text}) with the already extracted information of the current field ({state['stepData']['field_information'][current_field]}) into a single text summary.
-Return a concise non-redundant summary (maximum 90 words).
-Do not include markdown, code fences, or extra keys.
-"""
-        step_messages += [{"role": "assistant", "content": text}, {"role": "user", "content": task2_prompt}]
+        step_messages += [{"role": "assistant", "content": text}]
+        step_messages = self._prompt_task2(
+            text=text,
+            current_field=current_field,
+            step_messages=step_messages,
+        )
         raw = await self._model_gateway.chat(messages=step_messages, model=self.VALIDATOR_MODEL, temperature=0.2)
         text = self._compact_information_summary((raw or "").strip())
         print(f"[DATA_COLLECTOR] DEBUG - Output task 2 : {text}")
         state["stepData"]["field_information"][current_field] = text
 
-        output3_format = {"type": "object", "properties": {"status": {"type": "string", "enum": ["empty", "in_progress", "complete"]}}}
-        task3_prompt = f"""Based on the new information summary for the current field and the answer criteria of the current field,
-indicate wether the current field is 'empty' (no user information extracted for this field), 'in_progress' (some user information but not enough) or 'complete' (there is enough user information for this field).
-Output STRICT JSON with this schema:
-{output3_format}
-"""
-        step_messages += [{"role": "assistant", "content": text}, {"role": "user", "content": task3_prompt}]
+        step_messages += [{"role": "assistant", "content": text}]
+        step_messages = self._prompt_task3(step_messages=step_messages)
         raw = await self._model_gateway.chat(messages=step_messages, model=self.VALIDATOR_MODEL, temperature=0.1)
         text = (raw or "").strip()
         print(f"[DATA_COLLECTOR] DEBUG - Output task 3 : {text}")
@@ -535,32 +744,8 @@ Output STRICT JSON with this schema:
         except Exception:
             print("[DATA_COLLECTOR] DEBUG - Parsing of task 3 output has failed.")
 
-        output4_format = {
-            "type": "object",
-            "properties": {
-                "list": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "key": {"type": "string"},
-                            "new_information_summary": {"type": "string"},
-                            "new_status": {"type": "string", "enum": ["empty", "in_progress", "complete"]},
-                        },
-                        "required": ["key", "new_information_summary", "new_status"],
-                    },
-                }
-            },
-            "required": ["list"],
-        }
-        task4_prompt = f"""Based on the fields specifications, determine if the user answer contains relevant information for some fields other than the current field.
-Update the information summary of the concerned fields with the user answer.
-Compare the new information summary of the concerned fields with their answer criteria. For each field, if there is enough information, set the field status to "complete". If there is not enough information and the field was "empty", set the field status to "in_progress"
-Return the list of the concerned fields, with their key, their new information summary and their new status.
-Output STRICT JSON with this schema:
-{output4_format}
-"""
-        step_messages += [{"role": "assistant", "content": text}, {"role": "user", "content": task4_prompt}]
+        step_messages += [{"role": "assistant", "content": text}]
+        step_messages = self._prompt_task4(step_messages=step_messages)
         raw = await self._model_gateway.chat(messages=step_messages, model=self.VALIDATOR_MODEL, temperature=0.2)
         text = (raw or "").strip()
         print(f"[DATA_COLLECTOR] DEBUG - Output task 4 : {text}")
@@ -653,6 +838,14 @@ Output STRICT JSON with this schema:
         state["stepData"] = step_data
         state["nextNode"] = "analyzer"
         return state
+    
+######################################
+##             Other                ##
+######################################
+
+    async def router(self, state: SubgraphState) -> str:
+        print("[ROUTER]: debug nextNode : ", state.get("nextNode"))
+        return state.get("nextNode")
 
     async def _build_branch_a_topics(self, collected: Dict[str, str]) -> Dict[str, Dict[str, str]]:
         branch_topics: Dict[str, Dict[str, str]] = {}
@@ -672,27 +865,13 @@ Output STRICT JSON with this schema:
 
         if not str(field_summary or "").strip():
             return fallback
+        
+        prompt = self._prompt_extract_rubric(
+            field_key=field_key,
+            field_summary=field_summary,
+            rubric_defs=rubric_defs,
+        )
 
-        output_format = {
-            "type": "object",
-            "properties": {rubric: {"type": "string"} for rubric in rubric_defs.keys()},
-            "required": list(rubric_defs.keys()),
-        }
-        prompt = f"""You are mapping a collected field summary into rubric-specific summaries.
-
-Field key: {field_key}
-Field summary: {field_summary}
-
-Rubric definitions:
-{json.dumps(rubric_defs)}
-
-Instructions:
-- For each rubric, return a concise summary strictly based on the field summary.
-- If there is no evidence for a rubric, return an empty string for that rubric.
-- Do not invent facts.
-- Output STRICT JSON with this schema:
-{json.dumps(output_format)}
-"""
         try:
             raw = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": prompt}],
@@ -778,20 +957,11 @@ Instructions:
             step_data.get("field_information", {}).get(completed_field or "", ""),
             max_words=22,
         )
-        prompt = f"""Write one short conversational transition sentence (maximum 16 words).
-
-Context:
-- Completed section: {done}
-- Next section: {nxt}
-- What we captured: {done_info or "enough information collected"}
-
-Rules:
-- Sound natural and friendly.
-- Acknowledge completion briefly.
-- Mention moving to the next section.
-- Exactly one sentence.
-- No markdown.
-"""
+        prompt = self._prompt_transition_feedback(
+            done=done,
+            nxt=nxt,
+            done_info=done_info,
+        )
         try:
             raw = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": prompt}],
@@ -841,7 +1011,7 @@ Rules:
         normalized = " ".join(answer.lower().split())
         if stage == 1:
             user_context = str(step_data.get("field_information", {}).get("a_use_case_identification", "") or "")
-            step_data["company_name_for_report"] = await self._extract_company_name(answer, normalized, user_context)
+            step_data["company_name_for_report"] = await self._extract_company_name(answer, user_context)
             step_data["post_collection_stage"] = 2
             step_data["pending_question"] = self.FINAL_REPORT_SAVE_OPT_OUT_QUESTION
             return
@@ -850,28 +1020,14 @@ Rules:
             step_data["post_collection_stage"] = 3
             step_data["pending_question"] = None
 
-    async def _extract_company_name(self, raw_answer: str, normalized_answer: str, user_context: str) -> Optional[str]:
+    async def _extract_company_name(self, raw_answer: str, user_context: str) -> Optional[str]:
         if not raw_answer:
             return None
+        normalized = " ".join(raw_answer.lower().split())
         skip_values = {"skip", "no", "none", "n/a", "prefer not to say", "no thanks", "not now"}
-        if normalized_answer in skip_values or normalized_answer in {"yes", "sure", "ok", "okay"}:
+        if normalized in skip_values or normalized in {"yes", "sure", "ok", "okay"}:
             return None
-        prompt = f"""Decide whether the user answer contains a company name for report display.
-
-User answer: {raw_answer}
-Known context: {user_context}
-
-Return STRICT JSON:
-{{
-  "company_name": "<name or unknown>",
-  "is_valid_company_name": true/false
-}}
-
-Rules:
-- If answer is refusal, preference, explanation, or sentence not giving a company name, set unknown/false.
-- If a company name is present, extract only the name.
-- No markdown.
-"""
+        prompt = self._prompt_extract_company_name(raw_answer=raw_answer, user_context=user_context)
         try:
             raw = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": prompt}],
@@ -916,16 +1072,7 @@ Rules:
 
     async def _auto_clarify_question_for_user(self, current_question: str) -> str:
         q = (current_question or "").strip()
-        prompt = f"""Rephrase the following question to make it easier to understand.
-Original question: {q}
-
-Rules:
-- Keep the same intent.
-- Make it concrete and user-friendly.
-- Use plain language.
-- Keep it to one sentence.
-- No markdown, no bullet points, no extra text.
-"""
+        prompt = self._prompt_auto_clarify(q=q)
         raw = await self._model_gateway.chat(messages=[{"role": "user", "content": prompt}], model=self.VALIDATOR_MODEL, temperature=0.2)
         clarified = " ".join((raw or "").strip().split())
         if not clarified or clarified.lower().startswith("llm is not configured") or clarified.lower().startswith("llm call failed"):
@@ -943,25 +1090,11 @@ Rules:
         user_answer: Optional[str],
         extracted_information: Optional[str],
     ) -> tuple[bool, Optional[str]]:
-        output_format = {
-            "type": "object",
-            "properties": {"needs_clarification": {"type": "boolean"}, "clarification_question": {"type": "string"}},
-            "required": ["needs_clarification", "clarification_question"],
-        }
-        prompt = f"""You are evaluating if a single follow-up clarification question is needed.
-Current question: {current_question}
-User answer: {user_answer or "no answer"}
-Extracted information: {extracted_information or "no information"}
-
-Rules:
-- Ask for clarification only if the answer is too vague, contradictory, or missing key detail.
-- At most one follow-up question should be asked.
-- The clarification question must be concise and concrete.
-- Return plain text in the clarification question with no markdown.
-
-Output STRICT JSON with this schema:
-{output_format}
-"""
+        prompt = self._prompt_clarification_decision(
+            current_question=current_question,
+            user_answer=user_answer,
+            extracted_information=extracted_information,
+        )
         raw = await self._model_gateway.chat(messages=[{"role": "user", "content": prompt}], model=self.VALIDATOR_MODEL, temperature=0.1)
         text = (raw or "").strip()
         try:
@@ -1158,20 +1291,11 @@ Output STRICT JSON with this schema:
         return "".join(f"- {field['key']}: {field['explanation']}\n" for field in self.FIELD_SPECS)
 
     async def _ai_completion(self, stepData: QuantumDataCollectorState) -> str:
-        field_description = self._field_desc_str()
-        field_information = stepData.get("field_information", {})
-        ai_question = self._latest_assistant_question(stepData["messages"])
-        prompt = f"""You want to assess the quantum readiness of your company, so you asked an assistant to provide you a detailed report on the quantum readiness of your company.
-In order to generate a reliable report, this assistant needs your information regarding 4 fields : 
-{field_description}
-You already provided the following information :
-{field_information}
-
-Now, the assistant asked you the following question : {ai_question}
-Invent a response consistent with the information already given.
-Respond with exactly one short sentence (maximum 25 words).
-Do not include markdown, code fences, lists, or extra keys.
-"""
+        prompt = self._prompt_ai_completion(
+            field_description=self._field_desc_str(),
+            field_information=stepData.get("field_information", {}),
+            ai_question=self._latest_assistant_question(stepData["messages"]),
+        )
         raw = await self._model_gateway.chat(messages=[{"role": "user", "content": prompt}], model=self.VALIDATOR_MODEL, temperature=0.2)
         text = " ".join((raw or "").strip().split())
         short_text = text
