@@ -198,8 +198,8 @@ I will update you on the information status for each field after every user mess
 Your main objective is always to get more information from the user about the current field, but you can help them to better understand technical terms if they need.
         """
 
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    @classmethod
     def _prompt_task1(
         cls,
         information_status: str,
@@ -232,8 +232,8 @@ Do not include markdown, code fences, or extra keys.
             {"role": "user", "content": prompt},
         ]
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    @classmethod
     def _prompt_task2(cls, text: str, current_field: str, step_messages: list[Dict[str, str]]) -> list[Dict]:
         prompt = f"""Merge the information you found ({text}) with the already extracted information of the current field ({current_field}) into a single text summary.
 Return a concise non-redundant summary (maximum 90 words).
@@ -241,8 +241,8 @@ Do not include markdown, code fences, or extra keys.
 """
         return step_messages + [{"role": "user", "content": prompt}]
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.1})
+    @classmethod
     def _prompt_task3(cls, step_messages: list[Dict[str, str]]) -> list[Dict]:
         output = {"type": "object", "properties": {"status": {"type": "string", "enum": ["empty", "in_progress", "complete"]}}}
         prompt = f"""Based on the new information summary for the current field and the answer criteria of the current field,
@@ -252,8 +252,8 @@ Output STRICT JSON with this schema:
 """
         return step_messages + [{"role": "user", "content": prompt}]
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    @classmethod
     def _prompt_task4(cls, step_messages: list[Dict[str, str]]) -> list[Dict]:
         output = {
             "type": "object",
@@ -282,8 +282,8 @@ Output STRICT JSON with this schema:
 """
         return step_messages + [{"role": "user", "content": prompt}]
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.1})
+    @classmethod
     def _prompt_extract_rubric(
         cls,
         field_key: str,
@@ -312,8 +312,8 @@ Instructions:
 """
         return prompt
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.3})
+    @classmethod
     def _prompt_transition_feedback(cls, done: str, nxt: str, done_info: str) -> str:
         prompt = f"""Write one short conversational transition sentence (maximum 16 words).
 
@@ -331,8 +331,8 @@ Rules:
 """
         return prompt
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.0})
+    @classmethod
     def _prompt_extract_company_name(cls, raw_answer: str, user_context: str) -> str:
         prompt = f"""Decide whether the user answer contains a company name for report display.
 
@@ -352,8 +352,8 @@ Rules:
 """
         return prompt
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    @classmethod
     def _prompt_auto_clarify(cls, q: str) -> str:
         prompt = f"""Rephrase the following question to make it easier to understand.
 Original question: {q}
@@ -367,8 +367,8 @@ Rules:
 """
         return prompt
 
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.1})
+    @classmethod
     def _prompt_clarification_decision(cls, current_question: str, user_answer: str, extracted_information: str) -> str:
         output_format = {
             "type": "object",
@@ -391,8 +391,8 @@ Output STRICT JSON with this schema:
 """
         return prompt
     
-    @classmethod
     @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.2})
+    @classmethod
     def _prompt_ai_completion(cls, field_description: str, field_information: Dict[str, str], ai_question: str) -> str:
         prompt = f"""You want to assess the quantum readiness of your company, so you asked an assistant to provide you a detailed report on the quantum readiness of your company.
 In order to generate a reliable report, this assistant needs your information regarding 4 fields : 

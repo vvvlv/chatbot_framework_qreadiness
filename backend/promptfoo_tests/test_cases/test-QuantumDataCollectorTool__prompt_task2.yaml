@@ -1,0 +1,10 @@
+- description: 'Smoke test for QuantumDataCollectorTool__prompt_task2'
+  vars:
+      text: "default text"
+      current_field: "default text"
+      step_messages: [{"default_key": "default text"}]
+      temperature: 0.2
+  prompts:
+    - QuantumDataCollectorTool__prompt_task2
+
+# Add more tests...
