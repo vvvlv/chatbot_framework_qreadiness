@@ -1,4 +1,5 @@
 import sys
+import os
 from typing import Dict, TypedDict, Callable, Any, Optional
 import inspect
 import traceback
@@ -13,39 +14,41 @@ class PromptSpec(TypedDict):
     prompt_build: PromptFuncType
     vars: Dict[str, Any]
     config: Dict[str, Any]
-
-class ClassInfos(TypedDict):
-    inner_func: PromptFuncType
-    method: Callable
     qualname: str
     parentModule: str
 
 prompt_registry : Dict[str, PromptSpec] = {}
-to_be_revised: Dict[str, ClassInfos] = {}
+to_be_revised: list[str] = []
 
 def register(model: Optional[str]=None, modelConfig: Optional[Dict[str, Any]]=None) -> PromptFuncType :
     def register(ogPromptFunc: Callable) -> PromptFuncType :
-        
+
         promptFunc = ogPromptFunc
-        isMethod = False
-        if isinstance(ogPromptFunc, classmethod) or isinstance(ogPromptFunc, staticmethod):
-            isMethod = True
-            promptFunc = ogPromptFunc.__func__
 
         # 1. Name the prompt
         funcName = promptFunc.__qualname__
-        if funcName and funcName in prompt_registry.keys(): # avoid duplication
-            print(f"[REGISTER] Rejected prompt {funcName} : name is already registered", file=sys.stderr)
-            return ogPromptFunc
         if funcName is None or funcName == "":
             funcName = "none-" + str(uuid.uuid4())
-        funcName = funcName.replace(".", "_")
         if "<lambda>" in funcName:
             funcName = funcName + str(uuid.uuid4())
+        if funcName in prompt_registry.keys(): # avoid overwritting
+            if promptFunc.__module__ == prompt_registry[funcName]["parentModule"]:
+                print(f"[REGISTER] Rejected prompt {funcName} : name is already registered", file=sys.stderr)
+                return ogPromptFunc
+            else:
+                funcName = promptFunc.__module__ + '.' + funcName
+                otherName = prompt_registry[funcName]["parentModule"] + '.' + funcName
+                prompt_registry[otherName] = prompt_registry[funcName]
+                prompt_registry.pop(funcName)
         if VERBOSE:
             print(f"[REGISTER] Registering {funcName}...", file=sys.stderr)
 
-        # 2. Retrieving promptFunc arguments and create JSON schema -> it will be variables for test cases
+        # 2. Remember methods in order to provide them their classes after import
+        if isinstance(ogPromptFunc, classmethod) or isinstance(ogPromptFunc, staticmethod):
+            to_be_revised.append(funcName)
+            promptFunc = ogPromptFunc.__func__
+
+        # 3. Retrieving promptFunc arguments and create JSON schema -> it will be variables for test cases
         jsonSchema = {}
         try:
             signature = inspect.signature(promptFunc)
@@ -65,20 +68,7 @@ def register(model: Optional[str]=None, modelConfig: Optional[Dict[str, Any]]=No
             traceback.print_exc(file=sys.stderr)
             return ogPromptFunc
 
-        # 3. Remember methods in order to provide them their classes later
-        if isMethod:
-            classInfoRecord : ClassInfos = {}
-            try:
-                classInfoRecord["inner_func"] = promptFunc
-                classInfoRecord["method"] = ogPromptFunc
-                classInfoRecord["qualname"] = promptFunc.__qualname__
-                classInfoRecord["parentModule"] = promptFunc.__module__
-            except Exception as e:
-                print(f"[REGISTER] Rejected prompt {funcName} : {e}. The function is a method, but the parent class is not found", file=sys.stderr)
-                return ogPromptFunc
-            to_be_revised[funcName] = classInfoRecord
-
-        # 4. Build prompt generator for orphan functions
+        # 4. Build prompt generator
         def wrapped_func(context, name=funcName, vars=jsonSchema, func=promptFunc):
             vars2 = {key: value for (key, value) in context['vars'].items() if key in vars.keys()}
             print(f"[EXEC {name}] context vars: {context['vars']}", file=sys.stderr)
@@ -92,11 +82,19 @@ def register(model: Optional[str]=None, modelConfig: Optional[Dict[str, Any]]=No
             else:
                 raise Exception(f"Output of prompt generator {name} has invalid type (received {type(prompt)} - expected <str>, <dict[str, str]> or <list[dict[str, str]]]>) or invalid format (missing 'role' or 'content' in messages)")
             
-        # 5. Register the new prompt record
+        # 5. Assign default model if model is not specified
+        if model is None:
+            new_model = os.getenv("LITELLM_DEFAULT_MODEL", "").strip() or "claude-haiku-4-5"
+        else:
+            new_model = model
+        
+        # 6. Add prompt specs in the prompt registry
         promptRecord : PromptSpec = {
             'prompt_build': wrapped_func,
             'vars': jsonSchema,
-            'config': {"model": model, "modelConfig": modelConfig}
+            'config': {"model": new_model, "modelConfig": modelConfig},
+            'parentModule': promptFunc.__module__,
+            'qualname': promptFunc.__qualname__
         }
         prompt_registry[funcName] = promptRecord
 

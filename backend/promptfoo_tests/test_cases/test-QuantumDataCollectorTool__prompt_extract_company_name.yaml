@@ -1,9 +1,0 @@
-- description: 'Smoke test for QuantumDataCollectorTool__prompt_extract_company_name'
-  vars:
-      raw_answer: "default text"
-      user_context: "default text"
-      temperature: 0.0
-  prompts:
-    - QuantumDataCollectorTool__prompt_extract_company_name
-
-# Add more tests...

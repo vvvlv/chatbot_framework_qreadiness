@@ -1,8 +1,0 @@
-- description: 'Smoke test for QuantumDataCollectorTool__prompt_auto_clarify'
-  vars:
-      q: "default text"
-      temperature: 0.2
-  prompts:
-    - QuantumDataCollectorTool__prompt_auto_clarify
-
-# Add more tests...

@@ -171,8 +171,75 @@ python_path = "C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe
 Make sure you execute the following command in `backend` folder :
 
 ```bash
-python -m promptfoo_tests.promptfoo_main
+python -m promptfoo_tests.promptfoo_main all
 ```
+
+---
+
+## Generate config files - Options
+
+### Generate empty config file
+
+```bash
+python -m promptfoo_tests.promptfoo_main empty
+```
+
+The output will be :
+
+`promptfooconfig.yaml`:
+```
+description: 'Empty config'
+
+prompts:
+# Add some prompts (https://www.promptfoo.dev/docs/configuration/prompts/)
+
+providers:
+# Add some providers (https://www.promptfoo.dev/docs/providers/)
+
+tests:
+# Add some tests (https://www.promptfoo.dev/docs/configuration/test-cases/)
+```
+
+### Generate config only for some prompts
+
+```bash
+python -m promptfoo_tests.promptfoo_main some --prompt <regex>
+```
+
+where `<regex>` is a python regex : https://www.w3schools.com/python/python_regex.asp#matchobject
+
+This command will only take into account prompts whose name matches with the regex.
+
+**What is the name of a prompt ?**
+
+Prompts are generally identified by the [qualname](https://peps.python.org/pep-3155/) of the registered function.  
+For instance, the function _prompt_ai_completion in the class QuantumDataCollector will have the ID "QuantumDataCollector._prompt_ai_completion"  
+
+If 2 functions have the same qualname, their ID will be `<module>.<qualname>`.
+
+If a function is a lambda, their ID will be `<qualname><random UUID>`.
+
+**Examples :**
+
+1. Select class1.func1 and class1.func2 : 
+```bash
+python -m promptfoo_tests.promptfoo_main some --prompt "class1\.func1|class1\.func2"
+```
+
+2. Select all prompts in class1 :
+```bash
+python -m promptfoo_tests.promptfoo_main some --prompt "class1\."
+```
+
+### Specifie a name for config files
+
+Use this option if you want to generate several files without overwritting the previous ones.
+
+```bash
+python -m promptfoo_tests.promptfoo_main all --name <valid-file-name>
+```
+
+Then, `promptfooconfig.yaml` will be named `promptfooconfig.<name>.yaml` instead, and `test_cases` folder will become `test_cases_<name>`
 
 ---
 

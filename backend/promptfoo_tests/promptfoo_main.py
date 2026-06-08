@@ -1,10 +1,16 @@
-import os
 import json
+import re
 from pathlib import Path
+import argparse
 from promptfoo_tests.shared_state import get_prompts
 import promptfoo_tests.file_registry
 
 python_path = "C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe"
+
+parser = argparse.ArgumentParser(description="Script to generate promptfoo config files")
+parser.add_argument("command")
+parser.add_argument('--prompt')
+parser.add_argument('--name')
 
 def find_provider(provider, plist):
     for i in range(len(plist)):
@@ -12,60 +18,34 @@ def find_provider(provider, plist):
             return i
     return None
 
-def merge(dict1, dict2):
-    """
-    add dict1 items to dict2 when the key is not in dict2
-    """
-    d = dict(dict1)
-    for (key, value) in dict2.items():
-        d[key] = value
-    return d
-
-def write_prompt_section(prompt_specs):
+def write_prompt_section(prompt_specs, prompts=None):
     prompts_section = ""
     for key in prompt_specs.keys():
-        prompts_section += f"""  - id: {key}
+        if prompts is None or re.search(prompts, key):
+            prompts_section += f"""  - id: {key}
     label: {key}
     raw: exec:{python_path} -m promptfoo_tests.create_prompt exec_prompt --prompt {key}
 """
     return prompts_section
 
-def write_provider_section(prompt_specs):
+def write_provider_section(prompt_specs, prompts=None):
     provider_list = []
     for (key, value) in prompt_specs.items():
-        if value["config"].get("model", None) is not None:
+        if (prompts is None or re.search(prompts, key)) and value["config"].get("model", None) is not None:
             provider_record = {
                 "id": f"openai:{value['config']['model']}",
-                "config": value["config"].get("modelConfig", {}),
             }
             idx = find_provider(provider_record, provider_list)
             if idx is None:
-                # provider_record["prompts"] = [key]
                 provider_list.append(provider_record)
-            else:
-            #     provider_list[idx]["prompts"].append(key)
-                provider_list[idx]["config"] = merge(provider_list[idx]["config"], provider_record["config"])
     provider_section = ""
     for record in provider_list:
-        config = ""
-        if record["config"] is not None:
-            for (key, value) in record["config"].items():
-                config+= f"\n      {key}: {{{{ {key} if {key} else {value} }}}}"
         provider_section += f"""  - id: {record['id']}
-    config:
-      apiBaseUrl: "{{{{ env.LITELLM_BASE_URL }}}}"
-      apiKey: "{{{{ env.LITELLM_API_KEY }}}}"{config}
-"""
-    return provider_section
-
-def write_provider_section_tmp():
-    default_model = os.getenv("LITELLM_DEFAULT_MODEL", "").strip() or "claude-haiku-4-5"
-    base = f"""  - id: openai:{default_model}
     config:
       apiBaseUrl: "{{{{ env.LITELLM_BASE_URL }}}}"
       apiKey: "{{{{ env.LITELLM_API_KEY }}}}"
 """
-    return base
+    return provider_section
 
 def default_fill(jsonSchema):
     if jsonSchema is None or jsonSchema == "null":
@@ -94,47 +74,97 @@ def default_fill(jsonSchema):
     else:
         return None
 
-def write_individual_test(promptName, promptSpec):
+def write_individual_test(promptName, promptSpec, folderName):
     vars = promptSpec.get("vars", {})
     config = promptSpec.get("config", {}).get("modelConfig", {})
     vars_section = ""
+    config_section= ""
     for (key, value) in vars.items():
         vars_section += f"      {key}: {json.dumps(default_fill(value))}\n"
     for (key, value) in config.items():
-        vars_section += f"      {key}: {json.dumps(value)}\n"
+        config_section += f"      {key}: {json.dumps(value)}\n"
     base = f"""- description: 'Smoke test for {promptName}'
   vars:
-{vars_section}  prompts:
+{vars_section}  options:
+{config_section}  prompts:
     - {promptName}
 
 # Add more tests...
 """
-    with open(f"./promptfoo_tests/test_cases/test-{promptName}.yaml", "w") as f:
+    with open(f"./promptfoo_tests/{folderName}/test-{promptName}.yaml", "w") as f:
         f.write(base)
 
-def write_tests_section(prompt_specs):
+def write_tests_section(prompt_specs, prompts, name=None):
     # Create test_cases folder
-    Path("./promptfoo_tests/test_cases").mkdir(parents=True, exist_ok=True)
+    if name is None:
+        folderName = "test_cases"
+    else:
+        folderName = "test_cases_" + name
+    Path(f"./promptfoo_tests/{folderName}").mkdir(parents=True, exist_ok=True)
     tests_section = ""
     for (key, value) in prompt_specs.items():
-        tests_section += f"  - file://test_cases/test-{key}.yaml\n"
-        write_individual_test(key, value)
+        if prompts is None or re.search(prompts, key):
+            tests_section += f"  - file://{folderName}/test-{key}.yaml\n"
+            write_individual_test(key, value, folderName)
     return tests_section
 
-def write_config(prompt_specs):
+def write_config(prompt_specs, prompts=None, name=None):
     base = f"""description: 'Generated config'
 
 prompts:
-{write_prompt_section(prompt_specs)}
+{write_prompt_section(prompt_specs, prompts)}
 providers:
-{write_provider_section_tmp()}
+{write_provider_section(prompt_specs, prompts)}
 tests:
-{write_tests_section(prompt_specs)}
+{write_tests_section(prompt_specs, prompts, name)}
 """
-    with open("./promptfoo_tests/promptfooconfig.yaml", "w") as f:
+    if name is not None:
+        filename = "./promptfoo_tests/promptfooconfig." + name + ".yaml"
+    else:
+        filename = "./promptfoo_tests/promptfooconfig.yaml"
+    with open(filename, "w") as f:
+        f.write(base)
+
+def write_empty_config(name=None):
+    base = """description: 'Empty config'
+
+prompts:
+# Add some prompts (https://www.promptfoo.dev/docs/configuration/prompts/)
+
+providers:
+# Add some providers (https://www.promptfoo.dev/docs/providers/)
+
+tests:
+# Add some tests (https://www.promptfoo.dev/docs/configuration/test-cases/)
+"""
+    if name is not None:
+        filename = "./promptfoo_tests/promptfooconfig." + name + ".yaml"
+    else:
+        filename = "./promptfoo_tests/promptfooconfig.yaml"
+    with open(filename, "w") as f:
         f.write(base)
 
 if __name__ == '__main__':
-    prompt_specs = get_prompts()
-    # print(f"[MAIN] prompt_registry: {prompt_specs}")
-    write_config(prompt_specs)
+    args = parser.parse_args()
+    name = None
+    if hasattr(args, "name") and args.name:
+        if re.search("[^\\/:\"*?<>|\x00-\x1F]", args.name) is None or args.name[-1] == ".":
+            raise Exception(f"Error: Invalid --name '{args.name}'.\nCharacters '\\', '/', ':', '\"', '*', '?', '<', '>', '|' and '\u0000-\u001F' are forbidden and your name cannot end with a dot.")
+        else:
+            name = args.name
+    if args.command == "empty":
+        write_empty_config(name)
+    elif args.command == "all":
+        prompt_specs = get_prompts()
+        write_config(prompt_specs, name=name)
+    elif args.command == "some":
+        prompt_specs = get_prompts()
+        write_config(prompt_specs, prompts=args.prompt, name=name)
+    else:
+        raise Exception(f"""Error: Invalid command '{args.command}'.
+Allowed commands are 'empty', 'some' and 'all'.
+
+python -m promptfoo_main empty
+python -m promptfoo_main some --prompt <regex>
+python -m promptfoo_main all
+              """)
