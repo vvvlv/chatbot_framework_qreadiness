@@ -1,0 +1,13 @@
+- description: 'Smoke test for QuantumDataCollectorTool._prompt_task3'
+  vars:
+      step_messages: [{"default_key": "default text"}]
+  options:
+      temperature: 0.1
+  prompts:
+    - QuantumDataCollectorTool._prompt_task3*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

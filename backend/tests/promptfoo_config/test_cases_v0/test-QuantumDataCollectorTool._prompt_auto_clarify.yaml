@@ -1,0 +1,13 @@
+- description: 'Smoke test for QuantumDataCollectorTool._prompt_auto_clarify'
+  vars:
+      q: "default text"
+  options:
+      temperature: 0.2
+  prompts:
+    - QuantumDataCollectorTool._prompt_auto_clarify*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

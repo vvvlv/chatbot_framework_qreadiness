@@ -2,10 +2,10 @@ import json
 import sys
 import argparse
 from contextlib import redirect_stdout
-from promptfoo_tests.shared_state import get_prompts, VERBOSE
+from tests.promptfoo_tests.shared_state import get_prompts, VERBOSE
 
 with redirect_stdout(sys.stderr):
-    import promptfoo_tests.file_registry
+    import tests.promptfoo_tests.file_registry
 
 parser = argparse.ArgumentParser(description="This script manage prompts generation")
 parser.add_argument("command")

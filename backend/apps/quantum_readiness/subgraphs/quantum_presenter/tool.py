@@ -17,6 +17,8 @@ from core.protocols import SubgraphProtocol, ToolProtocol
 from core.state import SubgraphState
 from core.model_gateway import ModelGateway
 
+from tests.promptfoo_tests.shared_state import register
+
 
 class QuantumPresenterState(TypedDict, total=False):
     """State for Quantum Readiness Presenter Tool."""
@@ -103,17 +105,7 @@ class QuantumPresenterTool(SubgraphProtocol):
         print(f"[PRESENTER] Retrieving user industry information...")
         provided_company_name = (state["stepData"].get("company_name_for_report") or "").strip()
         extracted_company_candidate = "unknown"
-        industry_prompt = f"""Based on the following user message, identify the company name and the industry of the user. Return "unknown" if the user doesn't contain the information needed.
-
-User message :
-{state['stepData'].get('user_industry', 'no user message')}
-
-Return JSON:
-{{
-"company_name": "<user company name>" or "unknown",
-"industry": "<user industry>" or "unknown"
-}}
-"""
+        industry_prompt = self._prompt_extract_company_name(user_message=state['stepData'].get('user_industry', 'no user message'))
         try:
             industry_response = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": industry_prompt}],
@@ -187,39 +179,12 @@ Include practical deployment roadmaps and industry adoption benchmarks."""
         
         # Generate prioritized actions
         print(f"[PRESENTER] Generating prioritized actions...")
-        actions_prompt = f"""Generate a prioritized action list for quantum readiness.
-
-Company context:
-- Industry: {state['stepData'].get('industry', 'Unknown')}
-- Archetype: {state['stepData'].get('archetype', 'Unknown')}
-
-Scores:
-- Quantum Opportunity: {state['stepData'].get('quantum_opportunity_score', 0):.1f}/100
-
-Benchmark documents:
-{benchmark_context[:1000]}  # Truncate for context
-
-Generate:
-1. Top 3 priority actions (most urgent first)
-2. For each action, provide:
-- Specific, concrete action item
-- Reference (industry report, roadmap, benchmark publication, etc.)
-- Urgency level
-
-Return JSON:
-{{
-"priority_actions": [
-    {{
-        "action": "...",
-        "priority": 1,
-        "reference": "Industry benchmark report",
-        "urgency": "high"
-    }},
-    ...
-],
-"next_step": "One concrete action for next 30 days"
-}}"""
-        
+        actions_prompt = self._prompt_actions(
+            industry=state['stepData'].get('industry', 'Unknown'),
+            archetype=state['stepData'].get('archetype', 'Unknown'),
+            opportunity_score=state['stepData'].get('quantum_opportunity_score', 0),
+            benchmark_context=benchmark_context,
+        )
         try:
             actions_response = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": actions_prompt}],
@@ -246,18 +211,18 @@ Return JSON:
             state["stepData"]["next_step"] = ""
         
         # Generate timeline guidance # TODO : UNUSED FOR NOW
-        print(f"[PRESENTER] Generating timeline guidance...")
-        timeline_prompt = f"""Based on the benchmark documents and company context, provide timeline guidance.
+#         print(f"[PRESENTER] Generating timeline guidance...")
+#         timeline_prompt = f"""Based on the benchmark documents and company context, provide timeline guidance.
 
-Benchmark context:
-{benchmark_context[:1000]}
+# Benchmark context:
+# {benchmark_context[:1000]}
 
-Company: 
-    - name : {state['stepData'].get('company_name', 'Unknown')}
-    - industry : {state['stepData'].get('industry', 'Unknown')}
-Current opportunity score: {state['stepData'].get('quantum_opportunity_score', 0):.1f}
+# Company: 
+#     - name : {state['stepData'].get('company_name', 'Unknown')}
+#     - industry : {state['stepData'].get('industry', 'Unknown')}
+# Current opportunity score: {state['stepData'].get('quantum_opportunity_score', 0):.1f}
 
-Provide specific timeline recommendations based on the benchmarks."""
+# Provide specific timeline recommendations based on the benchmarks."""
         
         # try:
         #     timeline_response = await self._model_gateway.chat(
@@ -285,6 +250,95 @@ Provide specific timeline recommendations based on the benchmarks."""
         )
         return state
 
+# --------------------- Prompt functions --------------------------------
+
+    @register(modelConfig={"temperature": 0.3})
+    @classmethod
+    def _prompt_extract_company_name(cls, user_message: str) -> str:
+        return f"""Based on the following user message, identify the company name and the industry of the user. Return "unknown" if the user doesn't contain the information needed.
+
+User message :
+{user_message}
+
+Return JSON:
+{{
+"company_name": "<user company name>" or "unknown",
+"industry": "<user industry>" or "unknown"
+}}
+"""
+    
+    @register(modelConfig={"temperature": 0.0})
+    @classmethod
+    def _prompt_resolve_company_name(
+        cls,
+        provided_company_name: str,
+        extracted_candidate: str,
+        user_context: str,
+    ) -> str:
+        return f"""Resolve the best company name for a report header.
+
+Provided name from user preference step: {provided_company_name or "unknown"}
+Candidate extracted from context: {extracted_candidate or "unknown"}
+User context: {user_context}
+
+Return STRICT JSON:
+{{
+  "company_name": "<name or unknown>",
+  "is_valid_company_name": true/false
+}}
+
+Rules:
+- Prefer the provided name if it is a real company name.
+- If provided is invalid or missing, use extracted candidate if valid.
+- If neither is valid, return unknown/false.
+- Reject sentence fragments, refusals, or descriptive statements.
+- No markdown.
+"""
+    
+    @register(modelConfig={"temperature": 0.3})
+    @classmethod
+    def _prompt_actions(
+        cls,
+        industry: str,
+        archetype: str,
+        opportunity_score: float,
+        benchmark_context: str,
+    ) -> str:
+        return f"""Generate a prioritized action list for quantum readiness.
+
+Company context:
+- Industry: {industry}
+- Archetype: {archetype}
+
+Scores:
+- Quantum Opportunity: {opportunity_score:.1f}/100
+
+Benchmark documents:
+{benchmark_context[:1000]}  # Truncate for context
+
+Generate:
+1. Top 3 priority actions (most urgent first)
+2. For each action, provide:
+- Specific, concrete action item
+- Reference (industry report, roadmap, benchmark publication, etc.)
+- Urgency level
+
+Return JSON:
+{{
+"priority_actions": [
+    {{
+        "action": "...",
+        "priority": 1,
+        "reference": "Industry benchmark report",
+        "urgency": "high"
+    }},
+    ...
+],
+"next_step": "One concrete action for next 30 days"
+}}"""
+
+# --------------------- Other functions ---------------------------------
+
     def _format_report(self, step_data: Dict) -> str:
         """Format the final quantum readiness report."""
         company = step_data.get("company_name") or "Your Company"
@@ -308,25 +362,26 @@ Provide specific timeline recommendations based on the benchmarks."""
         
         report = f"""
 --- 
-**QUANTUM READINESS REPORT**  
+# QUANTUM READINESS REPORT  
 Company: {company} | Sector: {industry} | Date: {today}  
 
 ---
 
-1. **SCORES AT A GLANCE**  
+## 1. SCORES AT A GLANCE  
     - Branch A (Quantum Competitiveness):     {branch_a_score:.0f} / 100  📈 {branch_a_band}
 
-2. **YOUR ARCHETYPE**  
+## 2. YOUR ARCHETYPE  
    → "{archetype}"  
    {narrative}
 
-3. **SCORE BREAKDOWN**  
+## 3. SCORE BREAKDOWN  
     1. Branch A (Quantum Competitiveness)
         - Use Case Identification        {opp_breakdown.get('use_case_identification', {}).get('weighted_points', 0):>4.0f} / 35   {self._confidence_marker(opp_breakdown.get('use_case_identification', {}).get('confidence', 'low'))}
         - Tech/Infrastructure Baseline   {opp_breakdown.get('technical_infrastructure_baseline', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('technical_infrastructure_baseline', {}).get('confidence', 'low'))}
         - Strategic/Org Maturity         {opp_breakdown.get('strategic_organizational_maturity', {}).get('weighted_points', 0):>4.0f} / 25   {self._confidence_marker(opp_breakdown.get('strategic_organizational_maturity', {}).get('confidence', 'low'))}
         - Roadmap & Ecosystem            {opp_breakdown.get('roadmap_ecosystem', {}).get('weighted_points', 0):>4.0f} / 15   {self._confidence_marker(opp_breakdown.get('roadmap_ecosystem', {}).get('confidence', 'low'))}
-4. **WHERE TO FOCUS NEXT**  
+
+## 4. WHERE TO FOCUS NEXT  
    You are currently positioned as "{branch_a_band}" on quantum competitiveness.  
    Your most important focus areas are:  
    - Quantum Competitiveness: {branch_a_focus or 'Define focused pilots and decision milestones.'}  
@@ -359,25 +414,7 @@ Company: {company} | Sector: {industry} | Date: {today}
         extracted_candidate: str,
         user_context: str,
     ) -> str:
-        prompt = f"""Resolve the best company name for a report header.
-
-Provided name from user preference step: {provided_company_name or "unknown"}
-Candidate extracted from context: {extracted_candidate or "unknown"}
-User context: {user_context}
-
-Return STRICT JSON:
-{{
-  "company_name": "<name or unknown>",
-  "is_valid_company_name": true/false
-}}
-
-Rules:
-- Prefer the provided name if it is a real company name.
-- If provided is invalid or missing, use extracted candidate if valid.
-- If neither is valid, return unknown/false.
-- Reject sentence fragments, refusals, or descriptive statements.
-- No markdown.
-"""
+        prompt = self._prompt_resolve_company_name(provided_company_name, extracted_candidate, user_context)
         try:
             response = await self._model_gateway.chat(
                 messages=[{"role": "user", "content": prompt}],

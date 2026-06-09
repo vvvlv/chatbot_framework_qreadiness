@@ -1,6 +1,6 @@
 import sys
 import functools
-from promptfoo_tests.shared_state import get_to_be_revised, update_prompt_func, pop_prompt, get_prompts, VERBOSE
+from tests.promptfoo_tests.shared_state import get_to_be_revised, update_prompt_func, pop_prompt, get_prompts, VERBOSE
 
 # Add your files to retrieve prompts from here
 import apps.quantum_readiness.maingraph

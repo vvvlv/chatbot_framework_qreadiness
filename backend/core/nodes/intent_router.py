@@ -11,6 +11,8 @@ from core.registry import SubgraphRegistry
 from core.state import CoreState
 from core.model_gateway import ModelGateway
 
+from tests.promptfoo_tests.shared_state import register
+
 
 def create_intent_router_node(registry: SubgraphRegistry, model_gateway: ModelGateway):
     """
@@ -68,12 +70,14 @@ def create_intent_router_node(registry: SubgraphRegistry, model_gateway: ModelGa
         
         print(f"[INTENT_ROUTER] Available subgraphs: {list(registry)}")
         
-        classification_prompt = f"""You are an intent classifier for a chatbot system.
+        @register(modelConfig={"temperature": 0.1})
+        def _prompt_classification(user_input: str, subgraph_descriptions: str) -> str:
+            return f"""You are an intent classifier for a chatbot system.
 
 The user said: "{user_input}"
 
 Available capabilities:
-{chr(10).join(subgraph_descriptions)}
+{subgraph_descriptions}
 
 Classify the user's intent. Return ONLY the name of the most appropriate capability, or "fallback" if none match.
 
@@ -83,6 +87,8 @@ Examples:
 - User: "Help me with quantum cryptography" → quantum_readiness
 
 Return only the capability name, nothing else."""
+        
+        classification_prompt = _prompt_classification(user_input, chr(10).join(subgraph_descriptions))
 
         # Call LLM for classification
         try:

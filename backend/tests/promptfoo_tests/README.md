@@ -5,9 +5,10 @@
 1. [Overall Functionning](#overall-functionning)
 2. [Register prompts with @register](#how-to-register-a-new-prompt-for-tests-)
 3. [Generate config file](#generate-config-files)
-4. Fill Config file
+4. [Generate config file - options](#generate-config-files---options)
 5. [Manually add prompts](#how-to-manually-add-a-new-prompt-to-promptfooconfigyaml-)
-6. [Run tests](#run-tests)
+6. [Edit config file](#edit-config-files)
+7. [Run tests](#run-tests)
 
 ---
 
@@ -18,8 +19,8 @@ We use node promptfoo library to perform prompt tests (cf https://www.promptfoo.
 Additionnally to promptfoo, I created some python files to generate promptfoo config files skeleton simply by adding a `@register` decorator to your prompts.  
 
 The steps are then:
-1. Registering your prompts
-2. Generate the config files
+1. Register your prompts
+2. Generate config files
 3. Manually edit config files, add more tests cases, etc.
 4. Run tests
 
@@ -28,11 +29,10 @@ Organisation of `promptfoo_tests` folder :
  - `create_prompt.py`: This file is the link between the `promptfooconfig.yaml` file and your registered prompt functions. You should not need to modify it.
  - `file_registry.py`: This file imports your desired files in order to fill the prompt registry.
  - `promptfoo_main.py`: This file runs `file_registry.py` and generates the promptfoo config files.
- - `provider.py`: This file is the link between the `promptfooconfig.yaml` file and registered providers/models configs. It's not implemented yet.
  - `README.md`: It's me :)
  - `shared_state.py`: This file contains the shared prompt_registry, as well as some getter and setter functions and the implementation of the `register` decorator. You should not need to modify it.
 
-Generated Config Files : 
+Generated Config Files (`promptfoo_config` folder) : 
 - `promptfooconfig.yaml`: This is the main promptfoo config file, with 3 sections :
     - "prompts": the list of your prompts
     - "providers": the list of your providers
@@ -40,12 +40,14 @@ Generated Config Files :
 - `test_cases`: This folder contains one `*.yaml` file per prompt.
     - `test-<promptName>.yaml` : The list of test cases for \<promptName\>
 
-#### Does this approach works for other projects ?
+#### Does promptfoo_tests folder works for other projects ?
 
 Maybe if : 
 - The project is in Python
 - The project uses modular programming
 - All AI calls pass through our internal GenAI stack
+
+Else, the code needs to be translated.
 
 ---
 
@@ -95,7 +97,7 @@ async def ai_completion(last_question, current_step):
 You can add some model configuration as parameters to register, via `model` and `modelConfig`, in order to force provider configuration (optional).
 
 ```python
-from promptfoo_tests.shared_state import register
+from tests.promptfoo_tests.shared_state import register
 
 # ...
 
@@ -143,11 +145,11 @@ import core.graph
 
 ## Generate config files
 
-*Note: `promptfoo_main.py` is designed for powershell. For now it doesn't work on linux.*
+*Note: For now, `promptfoo_main.py` is designed for powershell. If you use Linux, you'll need to edit the generated commands in the "prompts" section of `promptfooconfig.yaml`*
 
 ### 0. Prerequisite
 
-Having Python installed and added to PATH.  
+Have Python installed and added to PATH.  
 *Note: Pydantic is uncompatible with Python3.14, so I downgraded to Python3.11*
 
 ### 1. Install requirements
@@ -171,8 +173,10 @@ python_path = "C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe
 Make sure you execute the following command in `backend` folder :
 
 ```bash
-python -m promptfoo_tests.promptfoo_main all
+python -m tests.promptfoo_tests.promptfoo_main all
 ```
+
+*Note: register decorators are executed when promptfoo executes create_prompt.py, so if you edited a prompt after a generation, you don't need to regenerate all files (you simply need to updates the associated test file if you modified arguments or model config).*
 
 ---
 
@@ -181,7 +185,7 @@ python -m promptfoo_tests.promptfoo_main all
 ### Generate empty config file
 
 ```bash
-python -m promptfoo_tests.promptfoo_main empty
+python -m tests.promptfoo_tests.promptfoo_main empty
 ```
 
 The output will be :
@@ -203,7 +207,7 @@ tests:
 ### Generate config only for some prompts
 
 ```bash
-python -m promptfoo_tests.promptfoo_main some --prompt <regex>
+python -m tests.promptfoo_tests.promptfoo_main some --prompt <regex>
 ```
 
 where `<regex>` is a python regex : https://www.w3schools.com/python/python_regex.asp#matchobject
@@ -223,20 +227,20 @@ If a function is a lambda, their ID will be `<qualname><random UUID>`.
 
 1. Select class1.func1 and class1.func2 : 
 ```bash
-python -m promptfoo_tests.promptfoo_main some --prompt "class1\.func1|class1\.func2"
+python -m tests.promptfoo_tests.promptfoo_main some --prompt "class1\.func1|class1\.func2"
 ```
 
 2. Select all prompts in class1 :
 ```bash
-python -m promptfoo_tests.promptfoo_main some --prompt "class1\."
+python -m tests.promptfoo_tests.promptfoo_main some --prompt "class1\."
 ```
 
-### Specifie a name for config files
+### Specify a name for config files
 
 Use this option if you want to generate several files without overwritting the previous ones.
 
 ```bash
-python -m promptfoo_tests.promptfoo_main all --name <valid-file-name>
+python -m tests.promptfoo_tests.promptfoo_main all --name <valid-file-name>
 ```
 
 Then, `promptfooconfig.yaml` will be named `promptfooconfig.<name>.yaml` instead, and `test_cases` folder will become `test_cases_<name>`
@@ -309,19 +313,86 @@ cf https://www.promptfoo.dev/docs/providers/
 
 cf https://www.promptfoo.dev/docs/configuration/test-cases/
 
+---
+
+## Edit config files
+
+### 1. Prompts section
+
+If you want to compare several versions of a prompt, you can add those versions inside the "prompts" section of your `promptfooconfig.yaml` :
+
+```
+prompts:
+
+  - label: QuantumAnalyzerTool._prompt_score_branch
+    raw: exec:C:/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumAnalyzerTool._prompt_score_branch
+
+  - label: QuantumAnalyzerTool._prompt_narrative
+    raw: exec:C:/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumAnalyzerTool._prompt_narrative
+
+  - ...
+
+  - label: QuantumAnalyzerTool._prompt_score_branch_variation1
+    raw: 'I am a slightly different version of the score_branch prompt. Here, I include a test variable : {{some_variable}}'
+```
+
+In order to not surcharge your `promptfooconfig.yaml`, you can alternatively write all your variations inside a .txt file and include the file inside the "prompts" section. Separate prompt varations with "---".
+
+`prompt_score_branch.txt`: 
+```
+I am a variation 1 of the score_branch prompt. Here, I include a test variable : {{some_variable}}
+---
+I am a variation 2 of the score_branch prompt. Here, I include a test variable : {{some_variable}}
+---
+I am a variation 3 of the score_branch prompt. Here, I include a test variable : {{some_variable}}
+```
+
+`promptfooconfig.yaml`:
+```
+prompts:
+
+  - label: QuantumAnalyzerTool._prompt_score_branch
+    raw: exec:C:/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumAnalyzerTool._prompt_score_branch
+
+  - label: QuantumAnalyzerTool._prompt_narrative
+    raw: exec:C:/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumAnalyzerTool._prompt_narrative
+
+  - ...
+
+  - id: file://<path-to-prompt_score_branch.txt>
+    label: QuantumAnalyzerTool._prompt_score_branch_variations
+```
+
+*Note: labels of your prompt variations should be an extension of the label of your original prompt, so that test .yaml is still associated to variations.*
+
+More informations on the "prompts" section here : https://www.promptfoo.dev/docs/configuration/prompts/
+
+### 2. Providers section
+
+cf https://www.promptfoo.dev/docs/providers/
+
+### 3. Tests section
+
+cf https://www.promptfoo.dev/docs/configuration/test-cases/
+
+---
+
 ## Run tests
 
 ### 0. Prerequisites
 
-Having Node.js installed
+- Having Node.js installed ([download page](https://nodejs.org/en/download))
+- Have API key for our internal genAI stack ([guide Litellm](https://github.com/Center-for-Hybrid-Intelligence/LiteLLM-QuantumChatbots/blob/main/README.md))
 
 ### 1. Run tests
 
 Navigate to `backend` folder and run :
 
 ```bash
-npx promptfoo@latest eval -c ./promptfoo_tests/promptfooconfig.yaml --env-file .env
+npx promptfoo@latest eval -c ./tests/promptfoo_config/promptfooconfig.yaml --env-file .env
 ```
+
+Don't forget to update the filename `promptfooconfig.yaml` with `promptfooconfig.<name>.yaml` if needed.
 
 ### 2. View results
 

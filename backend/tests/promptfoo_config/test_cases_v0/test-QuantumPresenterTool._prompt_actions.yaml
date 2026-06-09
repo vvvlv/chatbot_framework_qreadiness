@@ -1,0 +1,16 @@
+- description: 'Smoke test for QuantumPresenterTool._prompt_actions'
+  vars:
+      industry: "default text"
+      archetype: "default text"
+      opportunity_score: 0
+      benchmark_context: "default text"
+  options:
+      temperature: 0.3
+  prompts:
+    - QuantumPresenterTool._prompt_actions*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

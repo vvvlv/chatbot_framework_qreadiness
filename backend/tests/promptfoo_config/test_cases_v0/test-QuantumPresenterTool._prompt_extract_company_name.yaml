@@ -1,0 +1,13 @@
+- description: 'Smoke test for QuantumPresenterTool._prompt_extract_company_name'
+  vars:
+      user_message: "default text"
+  options:
+      temperature: 0.3
+  prompts:
+    - QuantumPresenterTool._prompt_extract_company_name*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

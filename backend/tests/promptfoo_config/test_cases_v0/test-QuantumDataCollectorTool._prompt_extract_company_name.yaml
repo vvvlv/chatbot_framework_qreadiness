@@ -1,0 +1,14 @@
+- description: 'Smoke test for QuantumDataCollectorTool._prompt_extract_company_name'
+  vars:
+      raw_answer: "default text"
+      user_context: "default text"
+  options:
+      temperature: 0.0
+  prompts:
+    - QuantumDataCollectorTool._prompt_extract_company_name*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

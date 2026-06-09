@@ -1,0 +1,15 @@
+- description: 'Smoke test for QuantumDataCollectorTool._prompt_clarification_decision'
+  vars:
+      current_question: "default text"
+      user_answer: "default text"
+      extracted_information: "default text"
+  options:
+      temperature: 0.1
+  prompts:
+    - QuantumDataCollectorTool._prompt_clarification_decision*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

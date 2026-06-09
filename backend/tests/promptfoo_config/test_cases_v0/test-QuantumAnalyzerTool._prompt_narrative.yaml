@@ -1,0 +1,16 @@
+- description: 'Smoke test for QuantumAnalyzerTool._prompt_narrative'
+  vars:
+      archetype: "default text"
+      company_name: "default text"
+      user_industry: "default text"
+      branch_a_score: 0
+  options:
+      temperature: 0.1
+  prompts:
+    - QuantumAnalyzerTool._prompt_narrative*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

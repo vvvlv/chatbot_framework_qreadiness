@@ -1,0 +1,57 @@
+description: 'Generated config'
+
+prompts:
+  - label: QuantumAnalyzerTool._prompt_score_branch
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumAnalyzerTool._prompt_score_branch
+  - label: QuantumAnalyzerTool._prompt_narrative
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumAnalyzerTool._prompt_narrative
+  - label: QuantumDataCollectorTool._prompt_task1
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_task1
+  - label: QuantumDataCollectorTool._prompt_task2
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_task2
+  - label: QuantumDataCollectorTool._prompt_task3
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_task3
+  - label: QuantumDataCollectorTool._prompt_task4
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_task4
+  - label: QuantumDataCollectorTool._prompt_extract_rubric
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_extract_rubric
+  - label: QuantumDataCollectorTool._prompt_transition_feedback
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_transition_feedback
+  - label: QuantumDataCollectorTool._prompt_extract_company_name
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_extract_company_name
+  - label: QuantumDataCollectorTool._prompt_auto_clarify
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_auto_clarify
+  - label: QuantumDataCollectorTool._prompt_clarification_decision
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_clarification_decision
+  - label: QuantumDataCollectorTool._prompt_ai_completion
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumDataCollectorTool._prompt_ai_completion
+  - label: QuantumPresenterTool._prompt_extract_company_name
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumPresenterTool._prompt_extract_company_name
+  - label: QuantumPresenterTool._prompt_resolve_company_name
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumPresenterTool._prompt_resolve_company_name
+  - label: QuantumPresenterTool._prompt_actions
+    raw: exec:C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe -m tests.promptfoo_tests.create_prompt exec_prompt --prompt QuantumPresenterTool._prompt_actions
+
+providers:
+  - id: openai:claude-haiku-4-5
+    config:
+      apiBaseUrl: "{{ env.LITELLM_BASE_URL }}"
+      apiKey: "{{ env.LITELLM_API_KEY }}"
+
+tests:
+  - file://test_cases_v0/test-QuantumAnalyzerTool._prompt_score_branch.yaml
+  - file://test_cases_v0/test-QuantumAnalyzerTool._prompt_narrative.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_task1.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_task2.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_task3.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_task4.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_extract_rubric.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_transition_feedback.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_extract_company_name.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_auto_clarify.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_clarification_decision.yaml
+  - file://test_cases_v0/test-QuantumDataCollectorTool._prompt_ai_completion.yaml
+  - file://test_cases_v0/test-QuantumPresenterTool._prompt_extract_company_name.yaml
+  - file://test_cases_v0/test-QuantumPresenterTool._prompt_resolve_company_name.yaml
+  - file://test_cases_v0/test-QuantumPresenterTool._prompt_actions.yaml
+

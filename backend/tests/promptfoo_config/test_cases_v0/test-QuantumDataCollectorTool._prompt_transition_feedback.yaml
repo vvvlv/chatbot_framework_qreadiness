@@ -1,0 +1,15 @@
+- description: 'Smoke test for QuantumDataCollectorTool._prompt_transition_feedback'
+  vars:
+      done: "default text"
+      nxt: "default text"
+      done_info: "default text"
+  options:
+      temperature: 0.3
+  prompts:
+    - QuantumDataCollectorTool._prompt_transition_feedback*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

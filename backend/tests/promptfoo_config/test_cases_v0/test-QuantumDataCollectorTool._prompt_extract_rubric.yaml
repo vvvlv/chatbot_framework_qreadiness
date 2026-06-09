@@ -1,0 +1,15 @@
+- description: 'Smoke test for QuantumDataCollectorTool._prompt_extract_rubric'
+  vars:
+      field_key: "default text"
+      field_summary: "default text"
+      rubric_defs: {"default_key": "default text"}
+  options:
+      temperature: 0.1
+  prompts:
+    - QuantumDataCollectorTool._prompt_extract_rubric*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

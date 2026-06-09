@@ -5,10 +5,12 @@ Boundary assistant when no subgraph matches the intent.
 Not a general-purpose chatbot: redirects users to the readiness workflow.
 """
 import re
-from typing import List
+from typing import List, Dict
 
 from core.state import CoreState
 from core.model_gateway import ModelGateway
+
+from tests.promptfoo_tests.shared_state import register
 
 FALLBACK_SYSTEM_PROMPT = """You are the boundary assistant for the Quantum Readiness Chatbot.
 
@@ -65,7 +67,10 @@ async def fallback_llm_node(state: CoreState, model_gateway: ModelGateway) -> Co
         content = msg.content if hasattr(msg, "content") else str(msg)
         conversation_context.append({"role": role, "content": content})
 
-    llm_messages = [{"role": "system", "content": FALLBACK_SYSTEM_PROMPT}] + conversation_context
+    @register(modelConfig={"temperature": 0.2})
+    def fallback_unit_prompt(conversation_context: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        return [{"role": "system", "content": FALLBACK_SYSTEM_PROMPT}] + conversation_context
+    llm_messages = fallback_unit_prompt(conversation_context)
 
     try:
         print(f"[FALLBACK_LLM] Calling LLM with guardrailed prompt ({len(llm_messages)} messages)...")

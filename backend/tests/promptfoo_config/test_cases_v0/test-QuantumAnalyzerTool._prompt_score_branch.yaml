@@ -1,0 +1,339 @@
+- description: 'Smoke test for QuantumAnalyzerTool._prompt_score_branch'
+  vars:
+    topics: {"default_key": {"default_key": true}}
+  options:
+    temperature: 0.1
+  prompts:
+    - QuantumAnalyzerTool._prompt_score_branch*
+
+# Happy cases
+- description: 'Happy case 1 for QuantumAnalyzerTool._prompt_score_branch : case of a healthcare R&D company'
+  vars:
+    topics:
+        {
+            "use_case_identification": {
+                "industry": "The user works in healthcare.",
+                "core_compute_problem": "The user's core compute problems are molecular docking and protein folding.",
+                "optimization": "The user does not run large-scale combinatorial optimization problems.",
+                "intrinsic_quantum": "The user conducts drug discovery simulations, which have an intrinsic quantum nature."
+            },
+            "technical_infrastructure_baseline": {
+                "classical_maturity": "The user uses state-of-the-art classical algorithms such as GOLD and deep learning algorithms.",
+                "internal_expertise": "The user does not have any interal quantum expertise."
+            },
+            "strategic_organizational_maturity": {
+                "adoption_posture": "The user adopts a wait-and-see approach regarding quantum, because they need reliable techologies.",
+                "ip_sensitivity": "Products of the user's company are protected by IP regulations."
+            },
+            "roadmap_ecosystem": {
+                "internal_pilots": "The user has a monitoring team in order to find a potential partnership among quantum vendors, but no concrete roadmap is established yet.",
+                "ecosystem_partnerships": "The user does not participate to quantum ecosystem networks, consortia or academic partnerships."
+            }
+        }
+  assert:
+    - type: contains-json
+      value:
+        {
+            "type": "array",
+            "items": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "use_case_identification",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["industry", "core_compute_problem", "optimization", "intrinsic_quantum"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "technical_infrastructure_baseline",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["classical_maturity", "internal_expertise"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "strategic_organizational_maturity",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["adoption_posture", "ip_sensitivity"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "roadmap_ecosystem",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["internal_pilots", "ecosystem_partnerships"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    }
+                ]
+            }
+        }
+  options:
+    transform: output.replace(/```json\\n?/g, '').replace(/```/g, '').trim()
+    temperature: 0.1
+  prompts:
+    - QuantumAnalyzerTool._prompt_score_branch
+
+
+- description: 'Happy case 2 for QuantumAnalyzerTool._prompt_score_branch : User skipped all questions'
+  vars:
+    topics:
+       {
+            "use_case_identification": {
+                "industry": "" ,
+                "core_compute_problem": "",
+                "optimization": "",
+                "intrinsic_quantum": ""
+            },
+            "technical_infrastructure_baseline": {
+                "classical_maturity": "",
+                "internal_expertise": ""
+            },
+            "strategic_organizational_maturity": {
+                "adoption_posture": "",
+                "ip_sensitivity": ""
+            },
+            "roadmap_ecosystem": {
+                "internal_pilots": "",
+                "ecosystem_partnerships": ""
+            }
+        }
+  assert:
+    - type: contains-json
+      value:
+        {
+            "type": "array",
+            "items": {
+                "oneOf": [
+                    {
+                        "type": object,
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "use_case_identification",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["industry", "core_compute_problem", "optimization", "intrinsic_quantum"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    },
+                    {
+                        "type": object,
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "technical_infrastructure_baseline",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["classical_maturity", "internal_expertise"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    },
+                    {
+                        "type": object,
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "strategic_organizational_maturity",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["adoption_posture", "ip_sensitivity"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    },
+                    {
+                        "type": object,
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "const": "roadmap_ecosystem",
+                            },
+                            "rubrics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rubric": {
+                                            "type": "string",
+                                            "enum": ["internal_pilots", "ecosystem_partnerships"],
+                                        },
+                                        "score": {
+                                            "type": "number",
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                        }
+                                    },
+                                    "required": ["rubric", "score", "reason"],
+                                    "additionalProperties": False
+                                },
+                            }
+                        },
+                        "required": ["field", "rubrics"],
+                        "additionalProperties": False
+                    }
+                ]
+            }
+        }
+  options:
+    transform: output.replace(/```json/g, '').replace(/```/g, '').trim()
+    temperature: 0.1
+  prompts:
+    - QuantumAnalyzerTool._prompt_score_branch
+
+# Error Handling
+
+# Performance tests

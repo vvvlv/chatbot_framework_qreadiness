@@ -2,8 +2,8 @@ import json
 import re
 from pathlib import Path
 import argparse
-from promptfoo_tests.shared_state import get_prompts
-import promptfoo_tests.file_registry
+from tests.promptfoo_tests.shared_state import get_prompts
+import tests.promptfoo_tests.file_registry
 
 python_path = "C:/Users/clord/AppData/Local/Programs/Python/Python311/python.exe"
 
@@ -22,9 +22,8 @@ def write_prompt_section(prompt_specs, prompts=None):
     prompts_section = ""
     for key in prompt_specs.keys():
         if prompts is None or re.search(prompts, key):
-            prompts_section += f"""  - id: {key}
-    label: {key}
-    raw: exec:{python_path} -m promptfoo_tests.create_prompt exec_prompt --prompt {key}
+            prompts_section += f"""  - label: {key}
+    raw: exec:{python_path} -m tests.promptfoo_tests.create_prompt exec_prompt --prompt {key}
 """
     return prompts_section
 
@@ -87,11 +86,15 @@ def write_individual_test(promptName, promptSpec, folderName):
   vars:
 {vars_section}  options:
 {config_section}  prompts:
-    - {promptName}
+    - {promptName}*
 
-# Add more tests...
+# Happy cases
+
+# Error Handling
+
+# Performance tests
 """
-    with open(f"./promptfoo_tests/{folderName}/test-{promptName}.yaml", "w") as f:
+    with open(f"./tests/promptfoo_config/{folderName}/test-{promptName}.yaml", "w") as f:
         f.write(base)
 
 def write_tests_section(prompt_specs, prompts, name=None):
@@ -100,7 +103,7 @@ def write_tests_section(prompt_specs, prompts, name=None):
         folderName = "test_cases"
     else:
         folderName = "test_cases_" + name
-    Path(f"./promptfoo_tests/{folderName}").mkdir(parents=True, exist_ok=True)
+    Path(f"./tests/promptfoo_config/{folderName}").mkdir(parents=True, exist_ok=True)
     tests_section = ""
     for (key, value) in prompt_specs.items():
         if prompts is None or re.search(prompts, key):
@@ -119,9 +122,9 @@ tests:
 {write_tests_section(prompt_specs, prompts, name)}
 """
     if name is not None:
-        filename = "./promptfoo_tests/promptfooconfig." + name + ".yaml"
+        filename = "./tests/promptfoo_config/promptfooconfig." + name + ".yaml"
     else:
-        filename = "./promptfoo_tests/promptfooconfig.yaml"
+        filename = "./tests/promptfoo_config/promptfooconfig.yaml"
     with open(filename, "w") as f:
         f.write(base)
 
@@ -138,9 +141,9 @@ tests:
 # Add some tests (https://www.promptfoo.dev/docs/configuration/test-cases/)
 """
     if name is not None:
-        filename = "./promptfoo_tests/promptfooconfig." + name + ".yaml"
+        filename = "./tests/promptfoo_config/promptfooconfig." + name + ".yaml"
     else:
-        filename = "./promptfoo_tests/promptfooconfig.yaml"
+        filename = "./tests/promptfoo_config/promptfooconfig.yaml"
     with open(filename, "w") as f:
         f.write(base)
 

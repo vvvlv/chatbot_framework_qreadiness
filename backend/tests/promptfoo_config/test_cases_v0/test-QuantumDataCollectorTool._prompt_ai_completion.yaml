@@ -1,0 +1,15 @@
+- description: 'Smoke test for QuantumDataCollectorTool._prompt_ai_completion'
+  vars:
+      field_description: "default text"
+      field_information: {"default_key": "default text"}
+      ai_question: "default text"
+  options:
+      temperature: 0.2
+  prompts:
+    - QuantumDataCollectorTool._prompt_ai_completion*
+
+# Happy cases
+
+# Error Handling
+
+# Performance tests

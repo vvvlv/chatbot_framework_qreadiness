@@ -23,7 +23,7 @@ LITELLM_BASE_URL=http://litellm-quantumchatbots:4000     # production, on the VM
 LITELLM_API_KEY=sk-<the-virtual-key-generated-in-step-1>
 ```
 
-4. Have Node.js locally installed on your computer
+3. Have Node.js locally installed on your computer
 
 Install from here : https://nodejs.org/en/download 
 
@@ -53,13 +53,13 @@ Add as much test cases as you want in the section `tests` of `promptfooconfig.ya
 1. Go to the directory containing your promptfooconfig.yaml
 
 ```bash
-cd ./backend/single_promptfoo_tests
+cd ./backend/tests/single_promptfoo_tests
 ```
 
 2. Run the evaluation:
 
 ```bash
-npx promptfoo@latest eval --env-file ../.env
+npx promptfoo@latest eval --env-file ../../.env
 ```
 
 3. View results in web UI

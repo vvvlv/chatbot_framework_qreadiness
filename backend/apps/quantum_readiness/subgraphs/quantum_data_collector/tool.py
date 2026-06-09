@@ -16,7 +16,7 @@ from core.model_gateway import ModelGateway
 from core.protocols import SubgraphProtocol, ToolProtocol
 from core.state import SubgraphState
 
-from promptfoo_tests.shared_state import register
+from tests.promptfoo_tests.shared_state import register
 
 class FieldSpec(TypedDict):
     key: str
