@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from api.models import ChatRequest, HistoryRequest
+from api.report_metadata import build_report_download_metadata, extract_step_data_from_state
 from api.streaming import stream_graph_events
 from core.usage_context import clear_usage_context, set_usage_context
 
@@ -261,7 +262,8 @@ async def get_history(req: HistoryRequest, request: Request) -> list[Dict]:
     config = {"configurable": {"thread_id": session_id}}
     queue = request.app.state.active_queues.get(session_id)
     graph = request.app.state.graph
-    state = await graph.aget_state(config, subgraphs=True)
+    full_state = await graph.aget_state(config, subgraphs=True)
+    state = full_state
     current_subgraph = None
     is_graph_running = True
     if state and hasattr(state, "tasks") and len(state.tasks) > 0:
@@ -276,7 +278,7 @@ async def get_history(req: HistoryRequest, request: Request) -> list[Dict]:
     if state and hasattr(state, "values"):
         values = state.values
     messages = values.get("messages") or []
-    stepData = values.get("stepData") or {}
+    stepData = extract_step_data_from_state(full_state)
     step = stepData.get("step") or 0
     field_status = stepData.get("field_status") or {}
     prompt_id = values.get("pending_prompt_id") or None
@@ -309,11 +311,24 @@ async def get_history(req: HistoryRequest, request: Request) -> list[Dict]:
         },
         "meta": {},
     }
+    report_metadata = None
+    output_text = str(values.get("output") or "")
+    if "QUANTUM READINESS REPORT" in output_text:
+        report_metadata = build_report_download_metadata(stepData)
+        if report_metadata:
+            report_metadata["report_text"] = output_text
 
-    async def generator(messages, toolMeta):
+    async def generator(messages, toolMeta, reportMeta):
         try:
             yield f"data: {json.dumps(messages)}\n\n"
             yield f"data: {json.dumps(toolMeta)}\n\n"
+            if reportMeta:
+                report_meta_event = {
+                    "type": "report_metadata",
+                    "payload": reportMeta,
+                    "meta": {},
+                }
+                yield f"data: {json.dumps(report_meta_event)}\n\n"
             while True and queue is not None:
                 event = await queue.get()
                 if event is None:
@@ -323,7 +338,7 @@ async def get_history(req: HistoryRequest, request: Request) -> list[Dict]:
             clear_usage_context()
     
     return StreamingResponse(
-        generator(message_event, tool_meta_event),
+        generator(message_event, tool_meta_event, report_metadata),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

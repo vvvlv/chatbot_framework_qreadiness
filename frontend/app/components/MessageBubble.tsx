@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Message } from '../types';
 import { marked } from 'marked';
 
@@ -10,6 +11,10 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const assistantHtml = useMemo(
+    () => marked.parse(message.content, { async: false }),
+    [message.content]
+  );
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -26,7 +31,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
         </span>)
         : (<span
           className="prose md:prose-base prose-sm prose-teal leading-relaxed"
-          dangerouslySetInnerHTML={{ __html: marked(message.content) }}
+          dangerouslySetInnerHTML={{ __html: assistantHtml }}
         />)
         }
         {isStreaming && (

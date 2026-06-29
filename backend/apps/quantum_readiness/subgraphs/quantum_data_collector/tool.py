@@ -407,6 +407,39 @@ Do not include markdown, code fences, lists, or extra keys.
 """
         return prompt
 
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.0})
+    @classmethod
+    def _prompt_ai_completion_company_name(cls, field_information: Dict[str, str]) -> str:
+        return f"""You are completing a short follow-up question before a report is generated.
+
+Question asked: "Would you like to provide a company name to display in the report?"
+
+Assessment answers already collected:
+{field_information}
+
+Infer a plausible company name from the answers if one is implied.
+If no company can be inferred, respond with exactly: skip
+
+Rules:
+- Return only the company name or the word skip.
+- Maximum 5 words.
+- No sentence, punctuation, or explanation.
+"""
+
+    @register(model=VALIDATOR_MODEL, modelConfig={"temperature": 0.0})
+    @classmethod
+    def _prompt_ai_completion_privacy(cls) -> str:
+        return """You are completing a short yes/no privacy follow-up before a report is generated.
+
+Question asked: "Do you want to opt out of saving this final report in our database?"
+
+Respond with exactly one word:
+- "no" to allow saving (preferred demo default)
+- "yes" to opt out
+
+Return only yes or no.
+"""
+
 ######################################
 ##          Tool Structure          ##
 ######################################
@@ -513,6 +546,17 @@ Do not include markdown, code fences, lists, or extra keys.
         transition_feedback = state["stepData"].get("transition_feedback")
         if state["stepData"].get("pending_question") is not None:
             question = state["stepData"]["pending_question"]
+            stage = int(state["stepData"].get("post_collection_stage", 0) or 0)
+            if stage > 0:
+                state["stepData"]["last_question_kind"] = "post_collection"
+            last_step_message = (
+                state["stepData"]["messages"][-1]
+                if state["stepData"].get("messages")
+                else None
+            )
+            if not last_step_message or last_step_message.get("content") != question:
+                state["stepData"]["messages"].append({"role": "assistant", "content": question})
+                state["stepData"]["message_count"] += 1
         else:
             field_key = state["stepData"].get("current_field_key")
             field_spec = self._field_spec_by_key(field_key)
@@ -673,7 +717,10 @@ Do not include markdown, code fences, lists, or extra keys.
 
         if command == "/aicompletion":
             state["pending_prompt_id"] = None
-            state["stepData"]["last_user_answer"] = await self._ai_completion(state["stepData"])
+            state["stepData"]["last_user_answer"] = await self._ai_completion(
+                state["stepData"],
+                graph_messages=state.get("messages", []),
+            )
             state["messages"].append(HumanMessage(content=state["stepData"]["last_user_answer"]))
             await adispatch_custom_event("ai_completion", {"text": state["stepData"]["last_user_answer"]})
             state["nextNode"] = "get_information"
@@ -706,7 +753,7 @@ Do not include markdown, code fences, lists, or extra keys.
             current_field=current_field,
             current_atomic_question=current_atomic_question,
             last_question_kind=last_question_kind,
-            last_ai_message=state['stepData']['messages'][-1]["content"],
+            last_ai_messages=state['stepData']['messages'][-1]["content"],
             last_user_answer=state['stepData']['last_user_answer'],
         )
         raw = await self._model_gateway.chat(messages=step_messages, model=self.VALIDATOR_MODEL, temperature=0.2)
@@ -831,6 +878,7 @@ Do not include markdown, code fences, lists, or extra keys.
             "user_industry": collected.get("a_use_case_identification", ""),
             "branch_a_topics": branch_a_topics,
             "fields": collected,
+            "field_information": collected,
             "company_name_for_report": state["stepData"].get("company_name_for_report"),
             "report_save_opt_out": bool(state["stepData"].get("report_save_opt_out", False)),
         }
@@ -1290,13 +1338,78 @@ Do not include markdown, code fences, lists, or extra keys.
     def _field_desc_str(self) -> str:
         return "".join(f"- {field['key']}: {field['explanation']}\n" for field in self.FIELD_SPECS)
 
-    async def _ai_completion(self, stepData: QuantumDataCollectorState) -> str:
+    def _latest_graph_assistant_message(self, graph_messages: List[Any]) -> str:
+        for message in reversed(graph_messages or []):
+            role = getattr(message, "type", None)
+            if role in {"ai", "assistant"}:
+                content = getattr(message, "content", "")
+                if str(content).strip():
+                    return str(content)
+        return ""
+
+    def _resolve_ai_question(
+        self,
+        stepData: QuantumDataCollectorState,
+        graph_messages: Optional[List[Any]] = None,
+    ) -> str:
+        question = self._latest_assistant_question(stepData.get("messages", []))
+        if question and question != "No assistant question found.":
+            return question
+        graph_question = self._latest_graph_assistant_message(graph_messages or [])
+        if graph_question:
+            return graph_question
+        return stepData.get("pending_question") or ""
+
+    async def _ai_completion(
+        self,
+        stepData: QuantumDataCollectorState,
+        graph_messages: Optional[List[Any]] = None,
+    ) -> str:
+        stage = int(stepData.get("post_collection_stage", 0) or 0)
+        if stage == 1:
+            return await self._ai_completion_company_name(stepData)
+        if stage == 2:
+            return await self._ai_completion_privacy_preference()
+
+        ai_question = self._resolve_ai_question(stepData, graph_messages)
         prompt = self._prompt_ai_completion(
             field_description=self._field_desc_str(),
             field_information=stepData.get("field_information", {}),
-            ai_question=self._latest_assistant_question(stepData["messages"]),
+            ai_question=ai_question,
         )
         raw = await self._model_gateway.chat(messages=[{"role": "user", "content": prompt}], model=self.VALIDATOR_MODEL, temperature=0.2)
+        text = self._truncate_ai_completion_text(raw)
+        print(f"[DATA_COLLECTOR] DEBUG - AI completion : {text}")
+        return text
+
+    async def _ai_completion_company_name(self, stepData: QuantumDataCollectorState) -> str:
+        prompt = self._prompt_ai_completion_company_name(stepData.get("field_information", {}))
+        raw = await self._model_gateway.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.VALIDATOR_MODEL,
+            temperature=0.0,
+        )
+        text = " ".join((raw or "").strip().split()).strip("\"'")
+        if text.lower() in {"skip", "no", "none", "n/a", "unknown"}:
+            return "skip"
+        words = text.split()
+        text = " ".join(words[:5])
+        print(f"[DATA_COLLECTOR] DEBUG - AI completion (company name) : {text}")
+        return text
+
+    async def _ai_completion_privacy_preference(self) -> str:
+        prompt = self._prompt_ai_completion_privacy()
+        raw = await self._model_gateway.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.VALIDATOR_MODEL,
+            temperature=0.0,
+        )
+        normalized = " ".join((raw or "").strip().lower().split())
+        if normalized.startswith("yes"):
+            return "yes"
+        return "no"
+
+    def _truncate_ai_completion_text(self, raw: Optional[str]) -> str:
         text = " ".join((raw or "").strip().split())
         short_text = text
         for separator in [".", "?", "!", ";"]:
@@ -1309,6 +1422,4 @@ Do not include markdown, code fences, lists, or extra keys.
             short_text = " ".join(words[:25]).rstrip(",")
             if not short_text.endswith("."):
                 short_text += "."
-        text = short_text.strip().strip('"')
-        print(f"[DATA_COLLECTOR] DEBUG - AI completion : {text}")
-        return text
+        return short_text.strip().strip('"')

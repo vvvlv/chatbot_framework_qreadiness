@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator, Dict, Optional
 
 from langgraph.types import Command
 from api.custom_events import eventSelector
+from api.report_metadata import build_report_download_metadata, extract_step_data_from_state
 
 
 def _extract_interrupt_payload(state) -> Optional[Dict]:
@@ -91,6 +92,7 @@ async def stream_graph_events(
     
     current_meta = _build_meta(config, None)
     await _log_event("stream_start", payload={"is_resume": is_resume})
+    captured_report_metadata: Dict[str, Any] = {}
 
     async def _refresh_meta() -> Dict:
         nonlocal current_meta
@@ -129,6 +131,16 @@ async def stream_graph_events(
                 # Custom events from tools/subgraphs
                 name = event.get("name")
                 data = event.get("data", {})
+                if name == "report_download_metadata":
+                    captured_report_metadata.update(data)
+                    await _log_event(
+                        "report_download_metadata",
+                        payload={
+                            "company_name": data.get("company_name"),
+                            "collected_sections": len(data.get("collected_data") or []),
+                        },
+                    )
+                    continue
                 meta = await _refresh_meta()
                 type_, payload, meta = await eventSelector(name, data, meta, _log_event)
                 await queue.put(_sse(type_, payload, meta))
@@ -214,9 +226,9 @@ async def stream_graph_events(
 
             if final_output:
                 print(f"[SSE_STREAM] Emitting text_done ({len(final_output)} chars)")
-                step_data = {}
-                if final_state and hasattr(final_state, "values") and final_state.values:
-                    step_data = final_state.values.get("stepData", {}) or {}
+                step_data = extract_step_data_from_state(
+                    await graph.aget_state(config, subgraphs=True)
+                )
                 report_save_opt_out = bool(step_data.get("report_save_opt_out", False))
                 is_quantum_report = "QUANTUM READINESS REPORT" in final_output
                 if is_quantum_report and interaction_logger is not None:
@@ -252,7 +264,16 @@ async def stream_graph_events(
                     "stream_output_complete",
                     payload={"output_length": len(final_output)},
                 )
-                await queue.put(_sse("text_done", {"full_text": final_output}, await _refresh_meta()))
+                text_done_payload: Dict[str, Any] = {"full_text": final_output}
+                if is_quantum_report:
+                    report_metadata = captured_report_metadata or build_report_download_metadata(step_data)
+                    if report_metadata:
+                        text_done_payload.update(report_metadata)
+                        print(
+                            "[SSE_STREAM] Report metadata sections: "
+                            f"{len(report_metadata.get('collected_data') or [])}"
+                        )
+                await queue.put(_sse("text_done", text_done_payload, await _refresh_meta()))
             else:
                 print("[SSE_STREAM] No final output found to emit as text_done")
     except Exception as e:

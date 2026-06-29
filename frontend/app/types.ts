@@ -47,3 +47,14 @@ export interface Feedback {
   title: string;
   output: number | string;
 }
+
+export interface CollectedDataSection {
+  title: string;
+  content: string;
+}
+
+export interface ReportDownloadData {
+  reportText: string;
+  companyName: string;
+  collectedData: CollectedDataSection[];
+}

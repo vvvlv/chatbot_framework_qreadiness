@@ -7,40 +7,64 @@ import { ToolChrome } from './ToolChrome';
 import { useState, useEffect, useRef } from 'react';
 import { Feedbacks } from './Feedbacks';
 import { HelpPopup } from './HelpPopup';
+import { generateReportPdf } from '../utils/generateReportPdf';
 
-export function ChatWindow() {
-  const isUuid = (value: string): boolean => {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value
-    );
-  };
-  
-  let isNew = true;
+type ClientIds = {
+  sessionId: string;
+  userId: string;
+  isNew: boolean;
+};
 
-  let initSessionId : string = crypto.randomUUID();
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem('session_id');
-    if (stored && isUuid(stored)) {
-      initSessionId = stored;
-      isNew = false;
-    }
-    else {
-      localStorage.setItem('session_id', initSessionId);
-    }
+const isUuid = (value: string): boolean => {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+};
+
+function readOrCreateStoredId(storageKey: string): string {
+  const stored = localStorage.getItem(storageKey);
+  if (stored && isUuid(stored)) {
+    return stored;
   }
-  const [sessionId, setSessionId] = useState<string>(initSessionId);
+  const newId = crypto.randomUUID();
+  localStorage.setItem(storageKey, newId);
+  return newId;
+}
 
-  const [userId] = useState(() => {
-    // Generate or retrieve session ID
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('user_id');
-      if (stored && isUuid(stored)) return stored;
-      const newId = crypto.randomUUID();
-      localStorage.setItem('user_id', newId);
-      return newId;
-    }
-    return crypto.randomUUID();
-  });
+function resolveClientIds(): ClientIds {
+  const params = new URLSearchParams(window.location.search);
+  const embedMode = params.get("embed") === "1";
+  const urlSessionId = params.get("session_id");
+  const urlUserId = params.get("user_id");
+
+  if (embedMode) {
+    const sessionId =
+      urlSessionId && isUuid(urlSessionId)
+        ? urlSessionId
+        : crypto.randomUUID();
+    const userId =
+      urlUserId && isUuid(urlUserId) ? urlUserId : crypto.randomUUID();
+    return { sessionId, userId, isNew: true };
+  }
+
+  const storedSessionId = localStorage.getItem("session_id");
+  const hasStoredSession = Boolean(storedSessionId && isUuid(storedSessionId));
+  const sessionId = hasStoredSession
+    ? storedSessionId!
+    : readOrCreateStoredId("session_id");
+  const userId = readOrCreateStoredId("user_id");
+
+  return {
+    sessionId,
+    userId,
+    isNew: !hasStoredSession,
+  };
+}
+
+type ChatWindowContentProps = ClientIds;
+
+function ChatWindowContent({ sessionId: initialSessionId, userId, isNew }: ChatWindowContentProps) {
+  const [sessionId, setSessionId] = useState(initialSessionId);
 
   const {
     uiState,
@@ -53,6 +77,7 @@ export function ChatWindow() {
     send,
     deleteHistory,
     sendFeedback,
+    reportDownload,
   } = useChat(sessionId, setSessionId, userId, isNew);
 
   const steps = [
@@ -105,6 +130,15 @@ export function ChatWindow() {
   const [showFeedbackPopup, setShowFeedbackPopup] = useState<boolean>(false);
   const [showHelpPopup, setShowHelpPopup] = useState<boolean>(false);
 
+  const handleDownloadReport = () => {
+    if (!reportDownload) return;
+    generateReportPdf({
+      reportText: reportDownload.reportText,
+      companyName: reportDownload.companyName,
+      collectedData: reportDownload.collectedData,
+    });
+  };
+
   return (
     <div className={`flex relative h-screen flex-col bg-white`}>
       <header className="sticky top-0 bg-skyblue px-4 py-3 md:px-6 md:py-4 shadow-sm">
@@ -114,6 +148,15 @@ export function ChatWindow() {
               Session {sessionId}
             </span>
             <div className="flex flex-row items-center gap-2">
+              {reportDownload && (
+                <button
+                  type="button"
+                  onClick={handleDownloadReport}
+                  className="h-max rounded-xl border border-navy bg-white px-4 md:px-5 py-2.5 md:py-2 font-paragraph lg:text-md md:text-sm text-sm xs:text-xs text-navy hover:bg-skyblue/40 hover:cursor-pointer"
+                >
+                  Download PDF
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowHelpPopup(true)}
@@ -232,6 +275,18 @@ export function ChatWindow() {
           <MessageBubble key={message.id} message={message} />
         ))}
 
+        {reportDownload && (
+          <div className="flex justify-start">
+            <button
+              type="button"
+              onClick={handleDownloadReport}
+              className="rounded-xl bg-navy px-5 py-3 font-paragraph text-sm text-white shadow-sm hover:bg-navy/80 hover:cursor-pointer"
+            >
+              Download report as PDF
+            </button>
+          </div>
+        )}
+
         {showProcessingIndicator && (
           <div className="flex justify-start">
             <div className="max-w-[82%] rounded-2xl bg-beige text-teal px-4 py-3 shadow-sm">
@@ -299,4 +354,18 @@ export function ChatWindow() {
 
     </div>
   );
+}
+
+export function ChatWindow() {
+  const [clientIds, setClientIds] = useState<ClientIds | null>(null);
+
+  useEffect(() => {
+    setClientIds(resolveClientIds());
+  }, []);
+
+  if (!clientIds) {
+    return <div className="h-screen bg-white" />;
+  }
+
+  return <ChatWindowContent {...clientIds} />;
 }

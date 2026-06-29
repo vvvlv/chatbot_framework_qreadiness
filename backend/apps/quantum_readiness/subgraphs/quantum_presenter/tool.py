@@ -13,6 +13,7 @@ from typing import Dict, List, TypedDict
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langgraph.graph import END, START, StateGraph
 
+from api.report_metadata import build_report_download_metadata, format_collected_data_appendix_markdown
 from core.protocols import SubgraphProtocol, ToolProtocol
 from core.state import SubgraphState
 from core.model_gateway import ModelGateway
@@ -129,11 +130,14 @@ class QuantumPresenterTool(SubgraphProtocol):
             traceback.print_exc()
             state["stepData"]["industry"] = "unknown"
 
-        resolved_company_name = await self._resolve_company_name(
-            provided_company_name=provided_company_name,
-            extracted_candidate=extracted_company_candidate,
-            user_context=str(state["stepData"].get("user_industry", "") or ""),
-        )
+        if provided_company_name and provided_company_name.lower() != "unknown":
+            resolved_company_name = provided_company_name[:120]
+        else:
+            resolved_company_name = await self._resolve_company_name(
+                provided_company_name=provided_company_name,
+                extracted_candidate=extracted_company_candidate,
+                user_context=str(state["stepData"].get("user_industry", "") or ""),
+            )
         state["stepData"]["company_name"] = resolved_company_name or "unknown"
 
         # Retrieve benchmark documents via RAG
@@ -242,6 +246,12 @@ Include practical deployment roadmaps and industry adoption benchmarks."""
         # Set output for core graph
         state["output"] = state["stepData"]["readiness_report"]
         print(f"[PRESENTER] ✓ Report generated ({len(state['stepData']['readiness_report'])} chars)")
+
+        report_metadata = build_report_download_metadata(state["stepData"])
+        if report_metadata:
+            collected_count = len(report_metadata.get("collected_data") or [])
+            print(f"[PRESENTER] Report download metadata: {collected_count} collected sections")
+            await adispatch_custom_event("report_download_metadata", report_metadata)
         
         await adispatch_custom_event("tool_progress", {"step": 1, "total": 1})
         await adispatch_custom_event(
@@ -388,7 +398,9 @@ Company: {company} | Sector: {industry} | Date: {today}
    If you want a practical action plan, the Roadmap Chatbot can translate these priorities into concrete next steps and timeline options.
 """
         
-        report += "  \n---\n"
+        report += format_collected_data_appendix_markdown(step_data)
+        if not report.rstrip().endswith("---"):
+            report += "  \n---\n"
         
         return report
 

@@ -6,7 +6,8 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent, Feedback } from '../types';
+import { UIState, SSEEvent, Message, ToolMeta, QuestionEvent, Feedback, ReportDownloadData, CollectedDataSection } from '../types';
+import { resolveCollectedData } from '../utils/reportCollectedData';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 console.log("API_URL :", API_URL || "(same-origin /api)");
@@ -19,6 +20,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
   const [error, setError] = useState<string | null>(null);
   const [currentResponse, setCurrentResponse] = useState<string>("");
   const [lockChatInput, setLockChatInput] = useState<boolean>(false);
+  const [reportDownload, setReportDownload] = useState<ReportDownloadData | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const responseBufferRef = useRef<string>("");
   const seenQuestionPromptIdsRef = useRef<Set<string>>(new Set());
@@ -81,6 +83,21 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     return () => { cancelled = true; };
   }, [sessionId]);
 
+  const applyReportMetadata = useCallback((
+    reportText: string,
+    companyName?: string,
+    collectedData?: CollectedDataSection[],
+  ) => {
+    if (!reportText.includes("QUANTUM READINESS REPORT")) {
+      return;
+    }
+    setReportDownload({
+      reportText,
+      companyName: companyName || "Your Company",
+      collectedData: resolveCollectedData(reportText, collectedData),
+    });
+  }, []);
+
   const handleEvent = useCallback((event: SSEEvent) => {
     console.log("event received :", event.type);
     switch (event.type) {
@@ -113,6 +130,11 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
               timestamp: new Date(),
             },
           ]);
+          applyReportMetadata(
+            fullText,
+            event.payload.company_name,
+            event.payload.collected_data,
+          );
           responseBufferRef.current = "";
           setCurrentResponse("");
         }
@@ -197,6 +219,14 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
       case "get_history":
         setMessages(event.payload.messages);
         break;
+
+      case "report_metadata":
+        applyReportMetadata(
+          event.payload.report_text || "",
+          event.payload.company_name,
+          event.payload.collected_data,
+        );
+        break;
       
       case "get_tool_meta":
         const current_tool = event.payload.name;
@@ -235,7 +265,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
       default:
         console.log("Unknown event type:", event.type);
     }
-  }, []);
+  }, [applyReportMetadata]);
 
   const send = useCallback(async (text: string, promptId?: string) => {
     if (!text.trim()) return;
@@ -246,14 +276,16 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     // TODO : skip this instruction in case of non-chat request
     setUIState("awaiting_assistant");
 
-    // Add user message
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: text,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
+    // Add user message (slash commands like /aicompletion are shown via ai_completion instead)
+    if (text !== "/aicompletion") {
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: text,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+    }
     setError(null);
     responseBufferRef.current = "";
     setCurrentResponse("");
@@ -337,6 +369,7 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     setCurrentQuestion(null);
     setCurrentResponse("");
     setLockChatInput(false);
+    setReportDownload(null);
 
     // clear refs ?
     if (abortControllerRef.current) {
@@ -355,7 +388,10 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     // change sessionId
     const newSessionId = crypto.randomUUID();
     if (typeof window !== 'undefined') {
-      localStorage.setItem('session_id', newSessionId);
+      const embedMode = new URLSearchParams(window.location.search).get("embed") === "1";
+      if (!embedMode) {
+        localStorage.setItem('session_id', newSessionId);
+      }
     }
     setSessionId(newSessionId);
 
@@ -399,5 +435,6 @@ export function useChat(sessionId: string, setSessionId: (value: string) => void
     deleteHistory,
     sendFeedback,
     cancel,
+    reportDownload,
   };
 }
